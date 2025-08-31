@@ -152,17 +152,19 @@ ${conversationContext}
   }
 
   // Speech-to-Text configuration
-  public getSpeechToTextConfig() {
-    return {
-      encoding: "WEBM_OPUS" as const,
-      sampleRateHertz: 16000,
-      languageCode: "ja-JP",
-      model: "latest_long",
-      useEnhanced: true,
-      enableAutomaticPunctuation: true,
-      enableWordTimeOffsets: true,
-    }
+public getSpeechToTextConfig() {
+  return {
+    // WAV(PCM) に合わせる
+    encoding: "LINEAR16" as const,
+    sampleRateHertz: 16000,      // hello.wav が 16kHz なので合わせる
+    languageCode: "ja-JP",
+    model: "latest_long",
+    useEnhanced: true,
+    enableAutomaticPunctuation: true,
+    enableWordTimeOffsets: true,
   }
+}
+
 
   // Text-to-Speech configuration with ja-JP-Chirp3-HD-Zephyr
   public getTextToSpeechConfig() {
