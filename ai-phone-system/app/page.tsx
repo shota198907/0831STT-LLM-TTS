@@ -207,12 +207,30 @@ export default function AIPhoneSystem() {
 
       setCallState("connected")
       startConversation() // Use conversation flow for greeting
+
+      const greeting = "アシスタントです。ご用件をどうぞ。"
+      try {
+        const r = await fetch("/api/tts", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ text: greeting }),
+        })
+        const { audioBase64, mimeType } = await r.json()
+        const audio = new Audio(`data:${mimeType};base64,${audioBase64}`)
+        audio.onended = () => {
+          startListening()
+        }
+        await audio.play()
+      } catch (err) {
+        debugLog("Greeting audio failed", err)
+        startListening()
+      }
     } catch (error) {
       debugLog("Error starting call:", error)
       setCallState("idle")
       alert("マイクへのアクセスが必要です。ブラウザの設定を確認してください。")
     }
-  }, [initializeAudio, startConversation, debugLog])
+  }, [initializeAudio, startConversation, startListening, debugLog])
 
   const endCall = useCallback(() => {
     debugLog("Ending call...")

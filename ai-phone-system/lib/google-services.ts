@@ -154,8 +154,7 @@ ${conversationContext}
   // Speech-to-Text configuration
   public getSpeechToTextConfig() {
     return {
-      encoding: "WEBM_OPUS" as const,
-      sampleRateHertz: 16000,
+      encoding: "WEBM_OPUS" as const, // sampleRateHertz omitted for auto-detection
       languageCode: "ja-JP",
       model: "latest_long",
       useEnhanced: true,
@@ -169,7 +168,7 @@ ${conversationContext}
     return {
       voice: {
         languageCode: "ja-JP",
-        name: "ja-JP-Chirp3-HD-Zephyr",
+        name: process.env.TTS_VOICE ?? "ja-JP-Chirp3-HD-Zephyr",
         ssmlGender: "NEUTRAL" as const,
       },
       audioConfig: {

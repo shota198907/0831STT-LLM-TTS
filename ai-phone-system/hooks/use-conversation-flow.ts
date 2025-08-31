@@ -282,10 +282,7 @@ export function useConversationFlow({
 
     const greetingMessage = "アシスタントです。ご用件をどうぞ。"
     addMessage("ai", greetingMessage)
-
-    setTimeout(() => {
-      changeState("listening")
-    }, 2000)
+    // 音声再生と listening への遷移は呼び出し元で制御
   }, [addMessage, changeState, debugLog])
 
   const startListening = useCallback(() => {
