@@ -53,32 +53,47 @@ export class GoogleCloudServices {
     }
   }
 
-  // Speech-to-Text processing method
-  public async speechToText(audioBuffer: Buffer): Promise<string> {
-    if (!this.speechClient) {
-      throw new Error("Speech client not initialized")
-    }
-
-    try {
-      this.debugLog("Processing speech-to-text", { bufferSize: audioBuffer.length })
-
-      const request = {
-        audio: {
-          content: audioBuffer.toString("base64"),
-        },
-        config: this.getSpeechToTextConfig(),
-      }
-
-      const [response] = await this.speechClient.recognize(request)
-      const transcription = response.results?.map((result) => result.alternatives?.[0]?.transcript).join("\n") || ""
-
-      this.debugLog("STT result:", transcription)
-      return transcription
-    } catch (error) {
-      this.debugLog("STT error:", error)
-      throw new Error(`Speech-to-text failed: ${error}`)
-    }
+  // ⭐ 置き換え: speechToText を可変エンコーディング対応に
+public async speechToText(
+  audioBuffer: Buffer,
+  opts?: { encoding?: "WEBM_OPUS" | "LINEAR16"; sampleRateHertz?: number }
+): Promise<string> {
+  if (!this.speechClient) {
+    throw new Error("Speech client not initialized")
   }
+
+  try {
+    this.debugLog("Processing speech-to-text", { bufferSize: audioBuffer.length, opts })
+
+    // ベース設定
+    const config: any = {
+      languageCode: "ja-JP",
+      model: "latest_long",
+      useEnhanced: true,
+      enableAutomaticPunctuation: true,
+      enableWordTimeOffsets: true,
+    }
+    // 上書き（WEBMのときは sampleRate は省略してOK）
+    if (opts?.encoding) config.encoding = opts.encoding
+    if (opts?.sampleRateHertz) config.sampleRateHertz = opts.sampleRateHertz
+
+    const request = {
+      audio: { content: audioBuffer.toString("base64") },
+      config,
+    }
+
+    const [response] = await this.speechClient.recognize(request)
+    const transcription =
+      response.results?.map((r) => r.alternatives?.[0]?.transcript).join("\n") || ""
+
+    this.debugLog("STT result:", transcription)
+    return transcription
+  } catch (error) {
+    this.debugLog("STT error:", error)
+    throw new Error(`Speech-to-text failed: ${error}`)
+  }
+}
+
 
   // Text-to-Speech processing method
   public async textToSpeech(text: string): Promise<Buffer> {
