@@ -25,23 +25,24 @@ export async function POST(request: NextRequest) {
       type: audioFile.type,
     })
 
-    // Convert audio file to buffer
-const audioBuffer = Buffer.from(await audioFile.arrayBuffer())
+    const audioBuffer = Buffer.from(await audioFile.arrayBuffer())
 
-// 追加: Content-Type に応じてエンコーディングを決定
-const ct = (audioFile.type || "").toLowerCase()
-let encoding: "WEBM_OPUS" | "LINEAR16" | undefined
+    // ← ここで MIME からエンコーディングを判定
+    const mime = (audioFile.type || "").toLowerCase()
+    let overrides: any = {}
+    if (mime.includes("webm")) {
+      overrides = { encoding: "WEBM_OPUS" }
+    } else if (mime.includes("ogg") || mime.includes("opus")) {
+      overrides = { encoding: "OGG_OPUS" }
+    } else if (mime.includes("wav") || mime.includes("x-wav") || mime.includes("wave")) {
+      overrides = { encoding: "LINEAR16", sampleRateHertz: 16000 }
+    } else {
+      // 不明なら自動判定に委ねる
+      overrides = { encoding: "ENCODING_UNSPECIFIED" }
+    }
 
-if (ct.includes("webm")) {
-  encoding = "WEBM_OPUS"
-} else if (ct.includes("wav") || ct.includes("x-wav") || (audioFile.name || "").endsWith(".wav")) {
-  encoding = "LINEAR16"
-}
-
-// 既存の処理を置き換え:
-const googleServices = GoogleCloudServices.getInstance()
-const transcription = await googleServices.speechToText(audioBuffer, { encoding })
-
+    const googleServices = GoogleCloudServices.getInstance()
+    const transcription = await googleServices.speechToText(audioBuffer, overrides)
 
     if (!transcription.trim()) {
       debugLog("No transcription result")

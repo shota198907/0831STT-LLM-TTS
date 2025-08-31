@@ -1,6 +1,8 @@
 import { SpeechClient } from "@google-cloud/speech"
 import { TextToSpeechClient } from "@google-cloud/text-to-speech"
-import { GoogleGenerativeAI } from "@google/generative-ai"
+import { GoogleGenerativeAI, SafetySetting, HarmCategory, HarmBlockThreshold } from "@google/generative-ai"
+
+type SttEncoding = "WEBM_OPUS" | "OGG_OPUS" | "LINEAR16" | "ENCODING_UNSPECIFIED"
 
 export class GoogleCloudServices {
   private static instance: GoogleCloudServices
@@ -23,19 +25,20 @@ export class GoogleCloudServices {
 
   private initializeClients() {
     try {
-      // Initialize Speech-to-Text client
+      // Speech-to-Text
       this.speechClient = new SpeechClient({
         projectId: this.projectId,
+        // ローカルで key ファイルを使う場合のみ指定（Cloud Run では ADC を使用）
         keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS,
       })
 
-      // Initialize Text-to-Speech client
+      // Text-to-Speech
       this.ttsClient = new TextToSpeechClient({
         projectId: this.projectId,
         keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS,
       })
 
-      // Initialize Gemini AI
+      // Gemini
       if (process.env.GEMINI_API_KEY) {
         this.geminiAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
       }
@@ -53,49 +56,84 @@ export class GoogleCloudServices {
     }
   }
 
-  // ⭐ 置き換え: speechToText を可変エンコーディング対応に
-public async speechToText(
-  audioBuffer: Buffer,
-  opts?: { encoding?: "WEBM_OPUS" | "LINEAR16"; sampleRateHertz?: number }
-): Promise<string> {
-  if (!this.speechClient) {
-    throw new Error("Speech client not initialized")
+  // ===== Speech-to-Text =====
+  /**
+   * 音声バッファをテキストに変換します。
+   * @param audioBuffer PCM/Opus などの生バイト
+   * @param configOverrides ルート側で判定したエンコーディング等を上書き
+   */
+  public async speechToText(
+    audioBuffer: Buffer,
+    configOverrides: Partial<{
+      encoding: SttEncoding
+      sampleRateHertz: number
+      languageCode: string
+    }> = {}
+  ): Promise<string> {
+    if (!this.speechClient) {
+      throw new Error("Speech client not initialized")
+    }
+
+    try {
+      this.debugLog("Processing speech-to-text", {
+        bufferSize: audioBuffer.length,
+        overrides: configOverrides,
+      })
+
+      const request = {
+        audio: {
+          content: audioBuffer.toString("base64"),
+        },
+        config: this.getSpeechToTextConfig(configOverrides),
+      }
+
+      const [response] = await this.speechClient.recognize(request)
+      const transcription =
+        response.results?.map((r) => r.alternatives?.[0]?.transcript).join("\n") || ""
+
+      this.debugLog("STT result:", transcription)
+      return transcription
+    } catch (error) {
+      this.debugLog("STT error:", error)
+      throw new Error(`Speech-to-text failed: ${error}`)
+    }
   }
 
-  try {
-    this.debugLog("Processing speech-to-text", { bufferSize: audioBuffer.length, opts })
-
-    // ベース設定
-    const config: any = {
+  /**
+   * STT の基本設定。必要に応じて上書き（encoding / sampleRateHertz など）を適用。
+   * - デフォルトは ENCODING_UNSPECIFIED（Google 側の自動判定）
+   * - WAV(LINEAR16) のときだけ sampleRateHertz を有効化（未指定なら 16000）
+   */
+  public getSpeechToTextConfig(
+    overrides: Partial<{
+      encoding: SttEncoding
+      sampleRateHertz: number
+      languageCode: string
+    }> = {}
+  ) {
+    const base = {
+      encoding: "ENCODING_UNSPECIFIED" as const,
       languageCode: "ja-JP",
-      model: "latest_long",
-      useEnhanced: true,
       enableAutomaticPunctuation: true,
       enableWordTimeOffsets: true,
+      useEnhanced: true,
+      model: "latest_long",
+      // sampleRateHertz は必要時にのみ付与
+    } as any
+
+    const merged: any = { ...base, ...overrides }
+
+    // LINEAR16 以外では sampleRateHertz を明示しない（Opus では不要）
+    if (merged.encoding !== "LINEAR16") {
+      delete merged.sampleRateHertz
+    } else {
+      if (!merged.sampleRateHertz) merged.sampleRateHertz = 16000
     }
-    // 上書き（WEBMのときは sampleRate は省略してOK）
-    if (opts?.encoding) config.encoding = opts.encoding
-    if (opts?.sampleRateHertz) config.sampleRateHertz = opts.sampleRateHertz
 
-    const request = {
-      audio: { content: audioBuffer.toString("base64") },
-      config,
-    }
-
-    const [response] = await this.speechClient.recognize(request)
-    const transcription =
-      response.results?.map((r) => r.alternatives?.[0]?.transcript).join("\n") || ""
-
-    this.debugLog("STT result:", transcription)
-    return transcription
-  } catch (error) {
-    this.debugLog("STT error:", error)
-    throw new Error(`Speech-to-text failed: ${error}`)
+    return merged
   }
-}
 
-
-  // Text-to-Speech processing method
+  // ===== Text-to-Speech =====
   public async textToSpeech(text: string): Promise<Buffer> {
     if (!this.ttsClient) {
       throw new Error("TTS client not initialized")
@@ -125,7 +163,28 @@ public async speechToText(
     }
   }
 
-  // Gemini AI chat processing method
+  /**
+   * TTS 設定。環境変数 TTS_VOICE があればそれを優先。
+   * 例: ja-JP-Chirp3-HD-Zephyr
+   */
+  public getTextToSpeechConfig() {
+    const voiceName = process.env.TTS_VOICE || "ja-JP-Chirp3-HD-Zephyr"
+    return {
+      voice: {
+        languageCode: "ja-JP",
+        name: voiceName,
+        ssmlGender: "NEUTRAL" as const,
+      },
+      audioConfig: {
+        audioEncoding: "MP3" as const,
+        speakingRate: 1.0,
+        pitch: 0.0,
+        volumeGainDb: 0.0,
+      },
+    }
+  }
+
+  // ===== Gemini (Chat) =====
   public async generateResponse(
     userMessage: string,
     conversationHistory: Array<{ role: string; content: string }> = [],
@@ -137,14 +196,18 @@ public async speechToText(
     try {
       this.debugLog("Generating AI response", { userMessage, historyLength: conversationHistory.length })
 
+      const { generationConfig, safetySettings } = this.getGeminiConfig()
+
+      // v1beta の安定モデル（あなたの環境で通っているものを使用）
       const model = this.geminiAI.getGenerativeModel({
         model: "gemini-2.0-flash-exp",
-        generationConfig: this.getGeminiConfig().generationConfig,
-        safetySettings: this.getGeminiConfig().safetySettings,
+        generationConfig,
+        safetySettings,
       })
 
-      // Build conversation context
-      const conversationContext = conversationHistory.map((msg) => `${msg.role}: ${msg.content}`).join("\n")
+      const conversationContext = conversationHistory
+        .map((msg) => `${msg.role}: ${msg.content}`)
+        .join("\n")
 
       const prompt = `${this.getSystemPrompt()}
 
@@ -166,40 +229,18 @@ ${conversationContext}
     }
   }
 
-  // Speech-to-Text configuration
-public getSpeechToTextConfig() {
-  return {
-    // WAV(PCM) に合わせる
-    encoding: "LINEAR16" as const,
-    sampleRateHertz: 16000,      // hello.wav が 16kHz なので合わせる
-    languageCode: "ja-JP",
-    model: "latest_long",
-    useEnhanced: true,
-    enableAutomaticPunctuation: true,
-    enableWordTimeOffsets: true,
-  }
-}
-
-
-  // Text-to-Speech configuration with ja-JP-Chirp3-HD-Zephyr
-  public getTextToSpeechConfig() {
-    return {
-      voice: {
-        languageCode: "ja-JP",
-        name: "ja-JP-Chirp3-HD-Zephyr",
-        ssmlGender: "NEUTRAL" as const,
-      },
-      audioConfig: {
-        audioEncoding: "MP3" as const,
-        speakingRate: 1.0,
-        pitch: 0.0,
-        volumeGainDb: 0.0,
-      },
-    }
-  }
-
-  // Gemini 2.5 Flash configuration
+  // Gemini 設定
   public getGeminiConfig() {
+    const safetySettings: SafetySetting[] = [
+      {
+        category: HarmCategory.HARM_CATEGORY_HARASSMENT,
+        threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+      },
+      {
+        category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+        threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+      },
+    ]
     return {
       model: "gemini-2.5-flash",
       generationConfig: {
@@ -208,16 +249,7 @@ public getSpeechToTextConfig() {
         topP: 0.95,
         maxOutputTokens: 1024,
       },
-      safetySettings: [
-        {
-          category: "HARM_CATEGORY_HARASSMENT",
-          threshold: "BLOCK_MEDIUM_AND_ABOVE",
-        },
-        {
-          category: "HARM_CATEGORY_HATE_SPEECH",
-          threshold: "BLOCK_MEDIUM_AND_ABOVE",
-        },
-      ],
+      safetySettings,
     }
   }
 
