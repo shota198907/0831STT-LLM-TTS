@@ -58,7 +58,7 @@ export function useWebRTCAudio({ onAudioData, onError }: WebRTCAudioOptions) {
     }
   }, [onError, debugLog])
 
-  const startRecording = useCallback(() => {
+  const startRecording = useCallback(async () => {
     if (!streamRef.current || isRecording) {
       debugLog("Cannot start recording - no stream or already recording")
       return
@@ -66,7 +66,11 @@ export function useWebRTCAudio({ onAudioData, onError }: WebRTCAudioOptions) {
 
     try {
       debugLog("Starting audio recording...")
-
+      // 🔑 重要: ユーザー操作直後に必ず resume（モバイル/Chrome対策）
+      if (audioContextRef.current?.state === "suspended") {
+          await audioContextRef.current.resume()
+          debugLog("AudioContext resumed on user gesture")
+        }
       audioChunksRef.current = []
 
       const mediaRecorder = new MediaRecorder(streamRef.current, {
@@ -93,7 +97,7 @@ export function useWebRTCAudio({ onAudioData, onError }: WebRTCAudioOptions) {
       }
 
       mediaRecorderRef.current = mediaRecorder
-      mediaRecorder.start(100) // Collect data every 100ms
+      mediaRecorder.start(250) // 収集間隔を少し長くして安定化
       setIsRecording(true)
 
       debugLog("Recording started successfully")

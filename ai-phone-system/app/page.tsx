@@ -75,9 +75,10 @@ export default function AIPhoneSystem() {
   )
 
   const handleCallEnd = useCallback(() => {
-    debugLog("Call ended by conversation flow")
-    endCall()
+    debugLog("Call end requested by conversation flow (temporarily ignored)")
+    // ここでは自動終了しない。終了はユーザーの「通話終了」ボタンのみ。
   }, [debugLog])
+  
 
   const {
     state: conversationState,
@@ -92,8 +93,8 @@ export default function AIPhoneSystem() {
     onStateChange: handleConversationStateChange,
     onMessageAdd: addMessage,
     onCallEnd: handleCallEnd,
-    silenceTimeoutDuration: 6000,
-    maxSilenceBeforeEnd: 6000,
+    silenceTimeoutDuration: 15000,
+    maxSilenceBeforeEnd: 30000,
   })
 
   const handleAudioData = useCallback(
@@ -247,12 +248,20 @@ export default function AIPhoneSystem() {
 
   // Start listening when conversation flow indicates
   useEffect(() => {
-    if (conversationState === "listening" && stream && audioContext) {
+    const state = audioContext?.state
+    if (conversationState === "listening" && stream && audioContext && state === "running") {
       debugLog("Starting VAD and recording based on conversation state")
       startVAD(stream, audioContext)
       startRecording()
+    } else {
+      debugLog("Skip VAD start (missing stream/context or not running)", {
+        conversationState,
+        hasStream: !!stream,
+        ctxState: state,
+      })
     }
   }, [conversationState, stream, audioContext, startVAD, startRecording, debugLog])
+  
 
   useEffect(() => {
     return () => {

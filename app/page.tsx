@@ -197,22 +197,95 @@ export default function AIPhoneSystem() {
     onMaxDurationReached: handleMaxDurationReached,
   })
 
+  // 再生解錠（無音オシレータで 0.1秒だけ音を出し、自動再生ブロックを解除）
+  const unlockPlayback = useCallback(async (ctx?: AudioContext) => {
+    try {
+      const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext
+      const audioCtx = ctx ?? audioContext ?? new Ctx({ sampleRate: 16000 })
+      if (audioCtx.state === "suspended") await audioCtx.resume()
+
+      const osc = audioCtx.createOscillator()
+      const gain = audioCtx.createGain()
+      gain.gain.value = 0.0001 // ほぼ無音
+      osc.connect(gain).connect(audioCtx.destination)
+      osc.start()
+      osc.stop(audioCtx.currentTime + 0.12)
+      await new Promise((r) => setTimeout(r, 160))
+
+      debugLog("Playback unlocked")
+    } catch (e) {
+      debugLog("Playback unlock failed (non-fatal):", e)
+    }
+  }, [audioContext, debugLog])
+
+  // ウェルカムTTSを再生 → 再生終了後に会話開始＆リッスン開始
+  const playWelcomeThenStart = useCallback(async () => {
+    try {
+      setCallState("ai-speaking")
+
+      const res = await fetch("/api/text-to-speech", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text: "お電話ありがとうございます。アシスタントです。ご用件をどうぞ。" }),
+      })
+      const data = await res.json()
+      if (!data?.audio) throw new Error("TTS audio missing")
+
+      // 念のため：再生前にもう一度解錠
+      if (audioContext) {
+        await audioContext.resume()
+        await unlockPlayback(audioContext)
+      } else {
+        await unlockPlayback()
+      }
+      
+
+      const url = `data:${data.mimeType};base64,${data.audio}`
+      const audio = new Audio(url)
+
+      audio.onended = () => {
+        debugLog("Welcome TTS ended; start conversation & listening")
+        setCallState("connected")
+        startConversation()
+        startListening()
+      }
+      audio.onerror = (err) => {
+        debugLog("Welcome TTS playback error:", err)
+        setCallState("connected")
+        startConversation()
+        startListening()
+      }
+
+      await audio.play()
+    } catch (err) {
+      debugLog("Welcome TTS failed:", err)
+      setCallState("connected")
+      // 音が出なくても会話は続行できるようにフォールバック
+      startConversation()
+      startListening()
+    }
+  }, [audioContext, startConversation, startListening, unlockPlayback, debugLog, setCallState])
+
   const startCall = useCallback(async () => {
     try {
       debugLog("Starting call...")
       setCallState("connecting")
 
       const { stream: audioStream, audioContext: context } = await initializeAudio()
-      debugLog("Audio initialized successfully")
+      debugLog("Audio initialized successfully", { sampleRate: context?.sampleRate })
 
+      // 先に再生解錠（これが無いとウェルカム音声がブロックされることがある）
+      await unlockPlayback(context)
+
+      // ここではまだ録音を開始しない。まずはウェルカムを流す。
       setCallState("connected")
-      startConversation() // Use conversation flow for greeting
+      await playWelcomeThenStart()
     } catch (error) {
       debugLog("Error starting call:", error)
       setCallState("idle")
       alert("マイクへのアクセスが必要です。ブラウザの設定を確認してください。")
     }
-  }, [initializeAudio, startConversation, debugLog])
+  }, [initializeAudio, unlockPlayback, playWelcomeThenStart, debugLog])
 
   const endCall = useCallback(() => {
     debugLog("Ending call...")
@@ -229,12 +302,12 @@ export default function AIPhoneSystem() {
 
   // Start listening when conversation flow indicates
   useEffect(() => {
-    if (conversationState === "listening" && stream && audioContext) {
+    if (conversationState === "listening" && stream && audioContext && !isRecording) {
       debugLog("Starting VAD and recording based on conversation state")
       startVAD(stream, audioContext)
       startRecording()
     }
-  }, [conversationState, stream, audioContext, startVAD, startRecording, debugLog])
+  }, [conversationState, stream, audioContext, isRecording, startVAD, startRecording, debugLog])
 
   useEffect(() => {
     return () => {
