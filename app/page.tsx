@@ -74,10 +74,14 @@ export default function AIPhoneSystem() {
     [debugLog],
   )
 
-  const handleCallEnd = useCallback(() => {
-    debugLog("Call ended by conversation flow")
-    endCall()
-  }, [debugLog])
+  const handleCallEnd = useCallback(
+    () => {
+      debugLog("Call ended by conversation flow")
+      endCall("flow")
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [debugLog],
+  )
 
   const {
     state: conversationState,
@@ -154,8 +158,9 @@ export default function AIPhoneSystem() {
     (error: Error) => {
       debugLog("Audio error:", error)
       alert(`音声エラー: ${error.message}`)
-      endCall()
+      endCall("error")
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [debugLog],
   )
 
@@ -287,33 +292,55 @@ export default function AIPhoneSystem() {
     }
   }, [initializeAudio, unlockPlayback, playWelcomeThenStart, debugLog])
 
-  const endCall = useCallback(() => {
-    debugLog("Ending call...")
+  const endCall = useCallback(
+    (reason: "user" | "flow" | "error") => {
+      debugLog(`Ending call... reason=${reason}`)
 
-    stopVAD()
-    cleanup()
-    resetConversation()
+      stopVAD()
+      cleanup()
+      resetConversation()
 
-    setCallState("idle")
-    setMessages([])
+      setCallState("idle")
+      setMessages([])
 
-    debugLog("Call ended")
-  }, [stopVAD, cleanup, resetConversation, debugLog])
+      debugLog("Call ended")
+    },
+    [stopVAD, cleanup, resetConversation, debugLog],
+  )
 
   // Start listening when conversation flow indicates
   useEffect(() => {
-    if (conversationState === "listening" && stream && audioContext && !isRecording) {
+    const state = audioContext?.state
+    if (
+      conversationState === "listening" &&
+      stream &&
+      audioContext &&
+      state === "running" &&
+      !isRecording
+    ) {
       debugLog("Starting VAD and recording based on conversation state")
       startVAD(stream, audioContext)
       startRecording()
+    } else {
+      debugLog("Skip VAD start (missing stream/context or not running)", {
+        conversationState,
+        hasStream: !!stream,
+        ctxState: state,
+        isRecording,
+      })
     }
   }, [conversationState, stream, audioContext, isRecording, startVAD, startRecording, debugLog])
 
+  // Clean up only when component unmounts; avoid triggering endCall indirectly
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     return () => {
-      endCall()
+      debugLog("Unmount cleanup: stopping audio only")
+      stopVAD()
+      cleanup()
+      resetConversation()
     }
-  }, [endCall])
+  }, [])
 
   const getStatusDisplay = () => {
     switch (callState) {
@@ -368,7 +395,7 @@ export default function AIPhoneSystem() {
                   通話開始
                 </Button>
               ) : (
-                <Button onClick={endCall} size="lg" variant="destructive">
+                <Button onClick={() => endCall("user")} size="lg" variant="destructive">
                   <PhoneOff className="w-5 h-5 mr-2" />
                   通話終了
                 </Button>

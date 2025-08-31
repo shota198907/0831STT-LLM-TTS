@@ -33,6 +33,7 @@ interface ConversationContext {
   connectionCheckCount: number
   lastUserResponseTime: number
   isAwaitingEndConfirmation: boolean
+  hasUserResponded: boolean
 }
 
 export function useConversationFlow({
@@ -49,6 +50,7 @@ export function useConversationFlow({
     connectionCheckCount: 0,
     lastUserResponseTime: Date.now(),
     isAwaitingEndConfirmation: false,
+    hasUserResponded: false,
   })
 
   const silenceTimeoutRef = useRef<NodeJS.Timeout | null>(null)
@@ -201,6 +203,7 @@ export function useConversationFlow({
       clearAllTimeouts()
       addMessage("user", userMessage)
       changeState("processing")
+      setContext((prev) => ({ ...prev, hasUserResponded: true }))
 
       const userAnalysis = analyzeUserResponse(userMessage)
 
@@ -291,8 +294,10 @@ export function useConversationFlow({
   const startListening = useCallback(() => {
     debugLog("Starting to listen for user input")
     changeState("listening")
-    startSilenceTimeout()
-  }, [changeState, startSilenceTimeout, debugLog])
+    if (context.hasUserResponded) {
+      startSilenceTimeout()
+    }
+  }, [changeState, startSilenceTimeout, debugLog, context.hasUserResponded])
 
   const stopListening = useCallback(() => {
     debugLog("Stopped listening")
@@ -309,6 +314,7 @@ export function useConversationFlow({
       connectionCheckCount: 0,
       lastUserResponseTime: Date.now(),
       isAwaitingEndConfirmation: false,
+      hasUserResponded: false,
     })
   }, [clearAllTimeouts, changeState, debugLog])
 
