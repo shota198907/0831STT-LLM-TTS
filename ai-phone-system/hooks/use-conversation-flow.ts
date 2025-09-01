@@ -20,10 +20,16 @@ type ConversationState =
   | "ending"
   | "ended"
 
+export type CallEndReason =
+  | "no-response"
+  | "no-response-after-prompt"
+  | "user-confirmed-end"
+  | "ai-ended"
+
 interface ConversationFlowOptions {
   onStateChange: (state: ConversationState) => void
   onMessageAdd: (type: "user" | "ai", content: string) => void
-  onCallEnd: () => void
+  onCallEnd: (reason: CallEndReason) => void
   silenceTimeoutDuration: number // 6 seconds for connection check
   maxSilenceBeforeEnd: number // 6 seconds after connection check
 }
@@ -177,7 +183,7 @@ export function useConversationFlow({
         // End call after message
         setTimeout(() => {
           changeState("ended")
-          onCallEnd()
+          onCallEnd("no-response")
         }, 3000)
       }, maxSilenceBeforeEnd)
     }, silenceTimeoutDuration)
@@ -214,7 +220,7 @@ export function useConversationFlow({
 
         setTimeout(() => {
           changeState("ended")
-          onCallEnd()
+          onCallEnd("user-confirmed-end")
         }, 3000)
 
         return { shouldEndConversation: true }
@@ -246,7 +252,7 @@ export function useConversationFlow({
 
         setTimeout(() => {
           changeState("ended")
-          onCallEnd()
+          onCallEnd("ai-ended")
         }, 3000)
 
         return { shouldContinueListening: false }

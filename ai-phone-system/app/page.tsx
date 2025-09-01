@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Mic, MicOff, Phone, PhoneOff, Settings } from "lucide-react"
 import { useWebRTCAudio } from "@/hooks/use-webrtc-audio"
 import { useVoiceActivityDetection } from "@/hooks/use-voice-activity-detection"
-import { useConversationFlow } from "@/hooks/use-conversation-flow"
+import { useConversationFlow, CallEndReason } from "@/hooks/use-conversation-flow"
 import { AudioVisualizer } from "@/components/audio-visualizer"
 import { VADMonitor } from "@/components/vad-monitor"
 import { APIClient } from "@/lib/api-client"
@@ -75,8 +75,13 @@ export default function AIPhoneSystem() {
   )
 
   const handleCallEnd = useCallback(
+<<<<<<< ours
     () => {
       debugLog("Call ended by conversation flow")
+=======
+    (reason: CallEndReason) => {
+      debugLog("Call ended by conversation flow", { reason })
+>>>>>>> theirs
       endCall("flow")
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -180,6 +185,7 @@ export default function AIPhoneSystem() {
 
   const handleSpeechEnd = useCallback(() => {
     debugLog("Speech ended")
+    stopVAD()
     stopRecording()
   }, [stopRecording, debugLog])
 
@@ -193,10 +199,10 @@ export default function AIPhoneSystem() {
   }, [stopRecording, debugLog])
 
   const { startVAD, stopVAD, vadMetrics } = useVoiceActivityDetection({
-    silenceThreshold: 0.8,
+    silenceThreshold: 1.2,
     volumeThreshold: 0.01,
     minSpeechDuration: 0.3,
-    maxSpeechDuration: 30,
+    maxSpeechDuration: 10,
     onSpeechStart: handleSpeechStart,
     onSpeechEnd: handleSpeechEnd,
     onSilenceDetected: handleSilenceDetected,
@@ -257,6 +263,7 @@ export default function AIPhoneSystem() {
 
   // Start listening when conversation flow indicates
   useEffect(() => {
+<<<<<<< ours
     const state = audioContext?.state
     if (
       conversationState === "listening" &&
@@ -276,6 +283,43 @@ export default function AIPhoneSystem() {
         isRecording,
       })
     }
+=======
+    const setup = async () => {
+      if (
+        conversationState === "listening" &&
+        stream &&
+        audioContext &&
+        !isRecording
+      ) {
+        if (audioContext.state === "suspended") {
+          try {
+            await audioContext.resume()
+            debugLog("AudioContext resumed before starting VAD")
+          } catch (err) {
+            debugLog("Failed to resume AudioContext", err)
+          }
+        }
+
+        if (audioContext.state === "running") {
+          debugLog("Starting recording and VAD based on conversation state")
+          await startRecording()
+          startVAD(stream, audioContext)
+        } else {
+          debugLog("AudioContext not running, skipping VAD start", {
+            state: audioContext.state,
+          })
+        }
+      } else {
+        debugLog("Skip VAD start (missing stream/context or already recording)", {
+          conversationState,
+          hasStream: !!stream,
+          ctxState: audioContext?.state,
+          isRecording,
+        })
+      }
+    }
+    setup()
+>>>>>>> theirs
   }, [conversationState, stream, audioContext, isRecording, startVAD, startRecording, debugLog])
   
 
