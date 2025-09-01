@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { GoogleCloudServices } from "@/lib/google-services"
+import { debugLog } from "@/lib/debug"
 
 interface ConversationMessage {
   role: "user" | "assistant"
@@ -8,26 +9,13 @@ interface ConversationMessage {
 }
 
 export async function POST(request: NextRequest) {
-  const debugLog = (message: string, data?: any) => {
-    if (process.env.DEBUG_LOGGING === "true") {
-      console.log(`[AI Chat API] ${message}`, data || "")
-    }
-  }
-
   try {
-    debugLog("AI Chat API request received")
-
     const { message, conversationHistory = [] } = await request.json()
+    debugLog("API AI-Chat", "message", { message })
 
     if (!message || typeof message !== "string") {
-      debugLog("Invalid message provided")
       return NextResponse.json({ error: "Valid message is required" }, { status: 400 })
     }
-
-    debugLog("Processing AI chat request", {
-      message,
-      historyLength: conversationHistory.length,
-    })
 
     // Convert conversation history to the format expected by Gemini
     const formattedHistory = conversationHistory.map((msg: ConversationMessage) => ({
@@ -38,8 +26,7 @@ export async function POST(request: NextRequest) {
     // Generate AI response
     const googleServices = GoogleCloudServices.getInstance()
     const aiResponse = await googleServices.generateResponse(message, formattedHistory)
-
-    debugLog("AI response generated successfully", { response: aiResponse })
+    debugLog("API AI-Chat", "ai_response", { length: aiResponse.length })
 
     // Check for conversation ending conditions
     const isEndingConversation =
@@ -58,7 +45,6 @@ export async function POST(request: NextRequest) {
       },
     })
   } catch (error) {
-    debugLog("AI Chat API error:", error)
     return NextResponse.json({ error: `AI chat processing failed: ${error}` }, { status: 500 })
   }
 }

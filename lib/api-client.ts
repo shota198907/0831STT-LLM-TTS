@@ -1,3 +1,5 @@
+import { debugLog } from "@/lib/debug"
+
 export class APIClient {
   private static instance: APIClient
   private baseUrl: string
@@ -13,23 +15,13 @@ export class APIClient {
     return APIClient.instance
   }
 
-  private debugLog(message: string, data?: any) {
-    if (process.env.NODE_ENV === "development") {
-      console.log(`[API Client] ${message}`, data || "")
-    }
-  }
-
   async processConversation(audioBlob: Blob, conversationHistory: any[] = []) {
     try {
-      this.debugLog("Processing conversation", {
-        audioSize: audioBlob.size,
-        historyLength: conversationHistory.length,
-      })
-
       const formData = new FormData()
       formData.append("audio", audioBlob, "audio.webm")
       formData.append("conversationHistory", JSON.stringify(conversationHistory))
 
+      debugLog("APIClient", "processConversation_send")
       const response = await fetch(`${this.baseUrl}/api/conversation`, {
         method: "POST",
         body: formData,
@@ -40,22 +32,20 @@ export class APIClient {
       }
 
       const result = await response.json()
-      this.debugLog("Conversation processed successfully", result)
+      debugLog("APIClient", "processConversation_ok")
 
       return result
     } catch (error) {
-      this.debugLog("Conversation processing error:", error)
       throw error
     }
   }
 
   async speechToText(audioBlob: Blob) {
     try {
-      this.debugLog("Converting speech to text", { audioSize: audioBlob.size })
-
       const formData = new FormData()
       formData.append("audio", audioBlob, "audio.webm")
 
+      debugLog("APIClient", "stt_send")
       const response = await fetch(`${this.baseUrl}/api/speech-to-text`, {
         method: "POST",
         body: formData,
@@ -66,19 +56,17 @@ export class APIClient {
       }
 
       const result = await response.json()
-      this.debugLog("STT completed", result)
+      debugLog("APIClient", "stt_ok")
 
       return result
     } catch (error) {
-      this.debugLog("STT error:", error)
       throw error
     }
   }
 
   async textToSpeech(text: string) {
     try {
-      this.debugLog("Converting text to speech", { text })
-
+      debugLog("APIClient", "tts_send")
       const response = await fetch(`${this.baseUrl}/api/text-to-speech`, {
         method: "POST",
         headers: {
@@ -92,19 +80,17 @@ export class APIClient {
       }
 
       const result = await response.json()
-      this.debugLog("TTS completed", { audioSize: result.audio?.length })
+      debugLog("APIClient", "tts_ok")
 
       return result
     } catch (error) {
-      this.debugLog("TTS error:", error)
       throw error
     }
   }
 
   async generateAIResponse(message: string, conversationHistory: any[] = []) {
     try {
-      this.debugLog("Generating AI response", { message, historyLength: conversationHistory.length })
-
+      debugLog("APIClient", "ai_chat_send")
       const response = await fetch(`${this.baseUrl}/api/ai-chat`, {
         method: "POST",
         headers: {
@@ -118,11 +104,10 @@ export class APIClient {
       }
 
       const result = await response.json()
-      this.debugLog("AI response generated", result)
+      debugLog("APIClient", "ai_chat_ok")
 
       return result
     } catch (error) {
-      this.debugLog("AI response error:", error)
       throw error
     }
   }

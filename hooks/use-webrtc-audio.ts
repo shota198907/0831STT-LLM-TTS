@@ -1,9 +1,10 @@
 "use client"
 
 import { useRef, useCallback, useState } from "react"
+import { debugLog } from "@/lib/debug"
 
 interface WebRTCAudioOptions {
-  onAudioData: (audioBlob: Blob) => void
+  onAudioData: (audioBlob: Blob) => Promise<void> | void
   onError: (error: Error) => void
 }
 
@@ -13,16 +14,12 @@ export function useWebRTCAudio({ onAudioData, onError }: WebRTCAudioOptions) {
   const streamRef = useRef<MediaStream | null>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
+  const isStartingRef = useRef(false)
+  const isStoppingRef = useRef(false)
 
-  const debugLog = useCallback((message: string, data?: any) => {
-    if (process.env.NODE_ENV === "development") {
-      console.log(`[WebRTC Debug] ${message}`, data || "")
-    }
-  }, [])
 
   const initializeAudio = useCallback(async (): Promise<{ stream: MediaStream; audioContext: AudioContext }> => {
     try {
-      debugLog("Initializing audio...")
 
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -45,32 +42,28 @@ export function useWebRTCAudio({ onAudioData, onError }: WebRTCAudioOptions) {
       streamRef.current = stream
       audioContextRef.current = audioContext
 
-      debugLog("Audio initialized successfully", {
+      debugLog("WebRTC", "Audio initialized", {
         sampleRate: audioContext.sampleRate,
-        state: audioContext.state,
       })
 
       return { stream, audioContext }
     } catch (error) {
-      debugLog("Error initializing audio:", error)
       onError(error as Error)
       throw error
     }
-  }, [onError, debugLog])
+  }, [onError])
 
   const startRecording = useCallback(async () => {
-    if (!streamRef.current || isRecording) {
-      debugLog("Cannot start recording - no stream or already recording")
+    if (!streamRef.current || isRecording || isStartingRef.current) {
       return
     }
 
+    isStartingRef.current = true
     try {
-      debugLog("Starting audio recording...")
       // 🔑 重要: ユーザー操作直後に必ず resume（モバイル/Chrome対策）
       if (audioContextRef.current?.state === "suspended") {
-          await audioContextRef.current.resume()
-          debugLog("AudioContext resumed on user gesture")
-        }
+        await audioContextRef.current.resume()
+      }
       audioChunksRef.current = []
 
       const mediaRecorder = new MediaRecorder(streamRef.current, {
@@ -80,19 +73,10 @@ export function useWebRTCAudio({ onAudioData, onError }: WebRTCAudioOptions) {
       mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
           audioChunksRef.current.push(event.data)
-          debugLog("Audio chunk received:", event.data.size)
         }
       }
 
-      mediaRecorder.onstop = () => {
-        debugLog("Recording stopped, creating audio blob")
-        const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm;codecs=opus" })
-        onAudioData(audioBlob)
-        audioChunksRef.current = []
-      }
-
-      mediaRecorder.onerror = (event) => {
-        debugLog("MediaRecorder error:", event)
+      mediaRecorder.onerror = () => {
         onError(new Error("Recording failed"))
       }
 
@@ -100,32 +84,55 @@ export function useWebRTCAudio({ onAudioData, onError }: WebRTCAudioOptions) {
       mediaRecorder.start(250) // 収集間隔を少し長くして安定化
       setIsRecording(true)
 
-      debugLog("Recording started successfully")
-    } catch (error) {
-      debugLog("Error starting recording:", error)
-      onError(error as Error)
-    }
-  }, [isRecording, onAudioData, onError, debugLog])
+      debugLog("WebRTC", "Recording started")
 
-  const stopRecording = useCallback(() => {
-    if (!mediaRecorderRef.current || !isRecording) {
-      debugLog("Cannot stop recording - no recorder or not recording")
+    } catch (error) {
+      onError(error as Error)
+    } finally {
+      isStartingRef.current = false
+    }
+  }, [isRecording, onAudioData, onError])
+
+  const stopRecording = useCallback(async () => {
+    if (!mediaRecorderRef.current || !isRecording || isStoppingRef.current) {
       return
     }
 
-    try {
-      debugLog("Stopping audio recording...")
-      mediaRecorderRef.current.stop()
-      setIsRecording(false)
-    } catch (error) {
-      debugLog("Error stopping recording:", error)
-      onError(error as Error)
-    }
-  }, [isRecording, onError, debugLog])
+    isStoppingRef.current = true
+    const recorder = mediaRecorderRef.current
+    const start = performance.now()
+
+    return new Promise<void>((resolve, reject) => {
+      recorder.onstop = async () => {
+        try {
+          const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm;codecs=opus" })
+          await onAudioData(audioBlob)
+          const end = performance.now()
+          debugLog("WebRTC", "Flushed last chunk", {
+            flush_last_chunk_ms: Math.round(end - start),
+          })
+          audioChunksRef.current = []
+          resolve()
+        } catch (err) {
+          reject(err)
+        } finally {
+          isStoppingRef.current = false
+        }
+      }
+
+      try {
+        recorder.requestData()
+        recorder.stop()
+        setIsRecording(false)
+      } catch (error) {
+        onError(error as Error)
+        isStoppingRef.current = false
+        reject(error)
+      }
+    })
+  }, [isRecording, onAudioData, onError])
 
   const cleanup = useCallback(() => {
-    debugLog("Cleaning up WebRTC audio resources")
-
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop()
     }
@@ -133,7 +140,6 @@ export function useWebRTCAudio({ onAudioData, onError }: WebRTCAudioOptions) {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => {
         track.stop()
-        debugLog("Stopped audio track:", track.kind)
       })
     }
 
@@ -145,7 +151,7 @@ export function useWebRTCAudio({ onAudioData, onError }: WebRTCAudioOptions) {
     streamRef.current = null
     audioContextRef.current = null
     setIsRecording(false)
-  }, [isRecording, debugLog])
+  }, [isRecording])
 
   return {
     initializeAudio,
