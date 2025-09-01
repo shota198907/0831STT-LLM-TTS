@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useEffect } from "react"
+import { useState, useCallback, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Mic, MicOff, Phone, PhoneOff, Settings } from "lucide-react"
@@ -24,6 +24,7 @@ export default function AIPhoneSystem() {
   const [callState, setCallState] = useState<CallState>("idle")
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [showVADMonitor, setShowVADMonitor] = useState(false)
+  const endCallRef = useRef<(reason: CallEndReason | "user" | "error") => void>()
 
   const debugLog = useCallback((message: string, data?: any) => {
     if (process.env.NODE_ENV === "development") {
@@ -75,16 +76,10 @@ export default function AIPhoneSystem() {
   )
 
   const handleCallEnd = useCallback(
-<<<<<<< ours
-    () => {
-      debugLog("Call ended by conversation flow")
-=======
     (reason: CallEndReason) => {
       debugLog("Call ended by conversation flow", { reason })
->>>>>>> theirs
-      endCall("flow")
+      endCallRef.current?.(reason)
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [debugLog],
   )
 
@@ -299,7 +294,7 @@ export default function AIPhoneSystem() {
   }, [initializeAudio, unlockPlayback, playWelcomeThenStart, debugLog])
 
   const endCall = useCallback(
-    (reason: "user" | "flow" | "error") => {
+    (reason: CallEndReason | "user" | "error") => {
       debugLog(`Ending call... reason=${reason}`)
 
       stopVAD()
@@ -313,29 +308,10 @@ export default function AIPhoneSystem() {
     },
     [stopVAD, cleanup, resetConversation, debugLog],
   )
+  endCallRef.current = endCall
 
   // Start listening when conversation flow indicates
   useEffect(() => {
-<<<<<<< ours
-    const state = audioContext?.state
-    if (
-      conversationState === "listening" &&
-      stream &&
-      audioContext &&
-      state === "running" &&
-      !isRecording
-    ) {
-      debugLog("Starting VAD and recording based on conversation state")
-      startVAD(stream, audioContext)
-      startRecording()
-    } else {
-      debugLog("Skip VAD start (missing stream/context or not running)", {
-        conversationState,
-        hasStream: !!stream,
-        ctxState: state,
-        isRecording,
-      })
-=======
     const setup = async () => {
       if (
         conversationState === "listening" &&
@@ -369,7 +345,7 @@ export default function AIPhoneSystem() {
           isRecording,
         })
       }
->>>>>>> theirs
+
     }
     setup()
   }, [conversationState, stream, audioContext, isRecording, startVAD, startRecording, debugLog])
