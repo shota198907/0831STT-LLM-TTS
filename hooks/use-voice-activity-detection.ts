@@ -218,14 +218,6 @@ export function useVoiceActivityDetection({
     isVADRunningRef.current = false
   }, [])
 
-  const adjustSensitivity = useCallback(
-    (newThreshold: number) => {
-      // This would be used to dynamically adjust the volume threshold
-      // based on environmental conditions
-    },
-    [],
-  )
-
   useEffect(() => {
     return () => {
       stopVAD()
@@ -236,6 +228,5 @@ export function useVoiceActivityDetection({
     startVAD,
     stopVAD,
     vadMetrics,
-    adjustSensitivity,
   }
 }
