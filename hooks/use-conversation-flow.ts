@@ -62,16 +62,14 @@ export function useConversationFlow({
   const silenceTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const connectionCheckTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
-  const debugLog = useCallback((message: string, data?: any) => {
-    if (process.env.NODE_ENV === "development") {
-      console.log(`[Conversation Flow] ${message}`, data || "")
-    }
-  }, [])
 
   const addMessage = useCallback(
     (type: "user" | "ai", content: string) => {
       const newMessage: ConversationMessage = {
-        id: Date.now().toString(),
+        id:
+          typeof crypto !== "undefined" && "randomUUID" in crypto
+            ? crypto.randomUUID()
+            : `${Date.now()}-${Math.random()}`,
         type,
         content,
         timestamp: new Date(),
@@ -80,7 +78,6 @@ export function useConversationFlow({
       setMessages((prev) => [...prev, newMessage])
       onMessageAdd(type, content)
 
-      debugLog(`Added ${type} message:`, content)
 
       // Update context based on message content
       if (type === "user") {
@@ -92,16 +89,15 @@ export function useConversationFlow({
 
       return newMessage
     },
-    [onMessageAdd, debugLog],
+    [onMessageAdd],
   )
 
   const changeState = useCallback(
     (newState: ConversationState) => {
-      debugLog(`State change: ${state} → ${newState}`)
       setState(newState)
       onStateChange(newState)
     },
-    [state, onStateChange, debugLog],
+    [state, onStateChange],
   )
 
   const analyzeAIResponse = useCallback((response: string) => {
@@ -155,7 +151,6 @@ export function useConversationFlow({
   }, [])
 
   const startSilenceTimeout = useCallback(() => {
-    debugLog("Starting silence timeout", { duration: silenceTimeoutDuration })
 
     if (silenceTimeoutRef.current) {
       clearTimeout(silenceTimeoutRef.current)
@@ -164,7 +159,6 @@ export function useConversationFlow({
     // If we're waiting for end confirmation, end the conversation after 8s of silence
     if (context.isAwaitingEndConfirmation) {
       silenceTimeoutRef.current = setTimeout(() => {
-        debugLog("No response after prompt - ending conversation")
 
         const endMessage =
           "お問い合わせありがとうございました。また何かございましたらいつでもご連絡ください。失礼いたします。"
@@ -181,7 +175,6 @@ export function useConversationFlow({
     }
 
     silenceTimeoutRef.current = setTimeout(() => {
-      debugLog("Silence timeout reached - checking connection")
 
       setContext((prev) => ({
         ...prev,
@@ -194,7 +187,6 @@ export function useConversationFlow({
 
       // Start final timeout for disconnection
       connectionCheckTimeoutRef.current = setTimeout(() => {
-        debugLog("Final silence timeout - ending conversation")
 
         const endMessage =
           "通信が途絶えているようです。一度通信を終了いたします。何かご不明点あれば、またご連絡ください。お電話ありがとうございました。"
@@ -214,7 +206,6 @@ export function useConversationFlow({
     addMessage,
     changeState,
     onCallEnd,
-    debugLog,
     context.isAwaitingEndConfirmation,
   ])
 
@@ -231,7 +222,6 @@ export function useConversationFlow({
 
   const processUserMessage = useCallback(
     (userMessage: string) => {
-      debugLog("Processing user message", { message: userMessage, state })
 
       clearAllTimeouts()
       addMessage("user", userMessage)
@@ -242,7 +232,6 @@ export function useConversationFlow({
 
       // Handle different conversation states
       if (context.isAwaitingEndConfirmation && userAnalysis.isNegativeResponse) {
-        debugLog("User confirmed no more questions - ending conversation")
 
         const endMessage = "承知いたしました。では、通信を終了いたします。お電話ありがとうございました。"
         addMessage("ai", endMessage)
@@ -257,7 +246,6 @@ export function useConversationFlow({
       }
 
       if (state === "checking-connection") {
-        debugLog("User responded during connection check - continuing conversation")
         setContext((prev) => ({
           ...prev,
           connectionCheckCount: 0,
@@ -266,18 +254,16 @@ export function useConversationFlow({
 
       return { shouldEndConversation: false }
     },
-    [state, context, addMessage, changeState, onCallEnd, analyzeUserResponse, clearAllTimeouts, debugLog],
+    [state, context, addMessage, changeState, onCallEnd, analyzeUserResponse, clearAllTimeouts],
   )
 
   const processAIResponse = useCallback(
     (aiResponse: string) => {
-      debugLog("Processing AI response", { response: aiResponse, state })
 
       addMessage("ai", aiResponse)
       const analysis = analyzeAIResponse(aiResponse)
 
       if (analysis.isEndingConversation) {
-        debugLog("AI is ending conversation")
         changeState("ending")
 
         setTimeout(() => {
@@ -289,7 +275,6 @@ export function useConversationFlow({
       }
 
       if (analysis.isAskingForMoreQuestions) {
-        debugLog("AI asked for more questions - awaiting confirmation")
         setContext((prev) => ({
           ...prev,
           hasAskedForMoreQuestions: true,
@@ -300,7 +285,6 @@ export function useConversationFlow({
       }
 
       if (analysis.isCheckingConnection) {
-        debugLog("AI is checking connection")
         changeState("checking-connection")
         return { shouldContinueListening: true }
       }
@@ -309,11 +293,10 @@ export function useConversationFlow({
       changeState("waiting-for-response")
       return { shouldContinueListening: true }
     },
-    [addMessage, changeState, onCallEnd, analyzeAIResponse, debugLog],
+    [addMessage, changeState, onCallEnd, analyzeAIResponse],
   )
 
   const startConversation = useCallback(() => {
-    debugLog("Starting conversation")
     changeState("greeting")
 
     const greetingMessage = "アシスタントです。ご用件をどうぞ。"
@@ -322,23 +305,20 @@ export function useConversationFlow({
     setTimeout(() => {
       changeState("listening")
     }, 2000)
-  }, [addMessage, changeState, debugLog])
+  }, [addMessage, changeState])
 
   const startListening = useCallback(() => {
-    debugLog("Starting to listen for user input")
     changeState("listening")
     if (context.hasUserResponded) {
       startSilenceTimeout()
     }
-  }, [changeState, startSilenceTimeout, debugLog, context.hasUserResponded])
+  }, [changeState, startSilenceTimeout, context.hasUserResponded])
 
   const stopListening = useCallback(() => {
-    debugLog("Stopped listening")
     clearAllTimeouts()
-  }, [clearAllTimeouts, debugLog])
+  }, [clearAllTimeouts])
 
   const endConversation = useCallback(() => {
-    debugLog("Ending conversation")
     clearAllTimeouts()
     changeState("ended")
     setMessages([])
@@ -349,13 +329,12 @@ export function useConversationFlow({
       isAwaitingEndConfirmation: false,
       hasUserResponded: false,
     })
-  }, [clearAllTimeouts, changeState, debugLog])
+  }, [clearAllTimeouts, changeState])
 
   const resetConversation = useCallback(() => {
-    debugLog("Resetting conversation")
     endConversation()
     changeState("idle")
-  }, [endConversation, changeState, debugLog])
+  }, [endConversation, changeState])
 
   // Cleanup on unmount
   useEffect(() => {

@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server"
-console.log("DEBUG GOOGLE_CLOUD_PROJECT_ID =", process.env.GOOGLE_CLOUD_PROJECT_ID)
 
 export async function GET() {
   try {
