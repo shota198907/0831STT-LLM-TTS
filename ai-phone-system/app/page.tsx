@@ -193,9 +193,13 @@ export default function AIPhoneSystem() {
     stopRecording()
   }, [stopRecording, debugLog])
 
+  // DEBUG: thresholds can be overridden via env vars for verification
+  const vadSilenceThreshold = Number(process.env.NEXT_PUBLIC_VAD_SILENCE_THRESHOLD ?? 1.2)
+  const vadVolumeThreshold = Number(process.env.NEXT_PUBLIC_VAD_VOLUME_THRESHOLD ?? 0.01)
+
   const { startVAD, stopVAD, vadMetrics } = useVoiceActivityDetection({
-    silenceThreshold: 1.2,
-    volumeThreshold: 0.01,
+    silenceThreshold: vadSilenceThreshold,
+    volumeThreshold: vadVolumeThreshold,
     minSpeechDuration: 0.3,
     maxSpeechDuration: 10,
     onSpeechStart: handleSpeechStart,
@@ -203,6 +207,14 @@ export default function AIPhoneSystem() {
     onSilenceDetected: handleSilenceDetected,
     onMaxDurationReached: handleMaxDurationReached,
   })
+
+  // TODO: Remove VAD threshold debug log after verification
+  useEffect(() => {
+    debugLog("Using VAD thresholds", {
+      silence: vadSilenceThreshold,
+      volume: vadVolumeThreshold,
+    })
+  }, [vadSilenceThreshold, vadVolumeThreshold, debugLog])
 
   const startCall = useCallback(async () => {
     try {

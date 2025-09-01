@@ -54,6 +54,7 @@ export function useVoiceActivityDetection({
       console.log(`[VAD Debug] ${message}`, data || "")
     }
   }, [])
+  // TODO: Remove debug logging after VAD verification
 
   const analyzeAudio = useCallback(() => {
     if (!analyserRef.current || !dataArrayRef.current) return
@@ -93,12 +94,11 @@ export function useVoiceActivityDetection({
       silenceDuration: !isSpeakingRef.current ? (currentTime - lastVolumeCheckRef.current) / 1000 : 0,
     }))
 
-    debugLog(`Audio analysis:`, {
+    // DEBUG: Log VAD decision for verification
+    debugLog(`VAD decision: ${isSpeaking ? "speech" : "silence"}`, {
       volume: normalizedVolume.toFixed(3),
       rms: rms.toFixed(3),
       threshold: adaptiveThreshold.toFixed(3),
-      isSpeaking,
-      adaptiveThreshold,
     })
 
     if (isSpeaking && !isSpeakingRef.current) {
@@ -141,6 +141,8 @@ export function useVoiceActivityDetection({
           isSpeakingRef.current = false
           onSpeechEnd()
           onSilenceDetected()
+          // DEBUG: indicate auto-stop trigger
+          debugLog("Auto-stop triggered due to silence")
 
           if (maxDurationTimerRef.current) {
             clearTimeout(maxDurationTimerRef.current)
