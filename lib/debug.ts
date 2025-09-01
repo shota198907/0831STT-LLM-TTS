@@ -1,6 +1,7 @@
+// デバッグログをデフォルトで有効化し、必要な場合のみ環境変数で無効化できるようにする
 export const debugEnabled =
-  process.env.NEXT_PUBLIC_DEBUG_LOGS === "true" ||
-  process.env.DEBUG_LOGS === "true"
+  process.env.NEXT_PUBLIC_DEBUG_LOGS !== "false" &&
+  process.env.DEBUG_LOGS !== "false"
 
 export function debugLog(scope: string, message: string, data?: any) {
   if (!debugEnabled) return
