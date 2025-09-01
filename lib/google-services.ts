@@ -1,6 +1,7 @@
 import { SpeechClient } from "@google-cloud/speech"
 import { TextToSpeechClient } from "@google-cloud/text-to-speech"
 import { GoogleGenerativeAI, SafetySetting, HarmCategory, HarmBlockThreshold } from "@google/generative-ai"
+import { debugLog } from "@/lib/debug"
 
 type SttEncoding = "WEBM_OPUS" | "OGG_OPUS" | "LINEAR16" | "ENCODING_UNSPECIFIED"
 
@@ -42,17 +43,7 @@ export class GoogleCloudServices {
       if (process.env.GEMINI_API_KEY) {
         this.geminiAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
       }
-
-      this.debugLog("Google Cloud clients initialized successfully")
     } catch (error) {
-      this.debugLog("Error initializing Google Cloud clients:", error)
-    }
-  }
-
-  // Debug logging for development
-  private debugLog(message: string, data?: any) {
-    if (process.env.DEBUG_LOGGING === "true") {
-      console.log(`[Google Services] ${message}`, data || "")
     }
   }
 
@@ -75,11 +66,6 @@ export class GoogleCloudServices {
     }
 
     try {
-      this.debugLog("Processing speech-to-text", {
-        bufferSize: audioBuffer.length,
-        overrides: configOverrides,
-      })
-
       const request = {
         audio: {
           content: audioBuffer.toString("base64"),
@@ -87,14 +73,13 @@ export class GoogleCloudServices {
         config: this.getSpeechToTextConfig(configOverrides),
       }
 
+      debugLog("GoogleServices", "speechToText_request")
       const [response] = await this.speechClient.recognize(request)
       const transcription =
         response.results?.map((r) => r.alternatives?.[0]?.transcript).join("\n") || ""
-
-      this.debugLog("STT result:", transcription)
+      debugLog("GoogleServices", "speechToText_result", { transcription })
       return transcription
     } catch (error) {
-      this.debugLog("STT error:", error)
       throw new Error(`Speech-to-text failed: ${error}`)
     }
   }
@@ -140,13 +125,12 @@ export class GoogleCloudServices {
     }
 
     try {
-      this.debugLog("Processing text-to-speech", { text })
-
       const request = {
         input: { text },
         ...this.getTextToSpeechConfig(),
       }
 
+      debugLog("GoogleServices", "textToSpeech_request", { text })
       const [response] = await this.ttsClient.synthesizeSpeech(request)
 
       if (!response.audioContent) {
@@ -154,11 +138,10 @@ export class GoogleCloudServices {
       }
 
       const audioBuffer = Buffer.from(response.audioContent as Uint8Array)
-      this.debugLog("TTS completed", { audioSize: audioBuffer.length })
+      debugLog("GoogleServices", "textToSpeech_result", { bytes: audioBuffer.length })
 
       return audioBuffer
     } catch (error) {
-      this.debugLog("TTS error:", error)
       throw new Error(`Text-to-speech failed: ${error}`)
     }
   }
@@ -194,8 +177,6 @@ export class GoogleCloudServices {
     }
 
     try {
-      this.debugLog("Generating AI response", { userMessage, historyLength: conversationHistory.length })
-
       const { generationConfig, safetySettings } = this.getGeminiConfig()
 
       // v1beta の安定モデル（あなたの環境で通っているものを使用）
@@ -218,13 +199,13 @@ ${conversationContext}
 
 アシスタント:`
 
+      debugLog("GoogleServices", "generateResponse_request", { userMessage })
       const result = await model.generateContent(prompt)
       const response = result.response.text()
+      debugLog("GoogleServices", "generateResponse_result", { length: response.length })
 
-      this.debugLog("AI response generated:", response)
       return response
     } catch (error) {
-      this.debugLog("Gemini AI error:", error)
       throw new Error(`AI response generation failed: ${error}`)
     }
   }

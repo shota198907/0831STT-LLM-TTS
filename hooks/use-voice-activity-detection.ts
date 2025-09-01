@@ -1,6 +1,7 @@
 "use client"
 
 import { useRef, useCallback, useEffect, useState } from "react"
+import { debugLog } from "@/lib/debug"
 
 interface VADOptions {
   silenceThreshold: number // in seconds
@@ -32,7 +33,7 @@ export function useVoiceActivityDetection({
   onMaxDurationReached,
 }: VADOptions) {
   const analyserRef = useRef<AnalyserNode | null>(null)
-  const dataArrayRef = useRef<Uint8Array | null>(null)
+  const dataArrayRef = useRef<Uint8Array>(new Uint8Array())
   const silenceTimerRef = useRef<NodeJS.Timeout | null>(null)
   const maxDurationTimerRef = useRef<NodeJS.Timeout | null>(null)
   const isSpeakingRef = useRef(false)
@@ -40,6 +41,7 @@ export function useVoiceActivityDetection({
   const speechStartTimeRef = useRef<number | null>(null)
   const volumeHistoryRef = useRef<number[]>([])
   const lastVolumeCheckRef = useRef<number>(0)
+  const isVADRunningRef = useRef(false)
 
   const [vadMetrics, setVadMetrics] = useState<VADMetrics>({
     currentVolume: 0,
@@ -49,17 +51,12 @@ export function useVoiceActivityDetection({
     isSpeaking: false,
   })
 
-  const debugLog = useCallback((message: string, data?: any) => {
-    if (process.env.NODE_ENV === "development") {
-      console.log(`[VAD Debug] ${message}`, data || "")
-    }
-  }, [])
-  // TODO: Remove debug logging after VAD verification
+
 
   const analyzeAudio = useCallback(() => {
     if (!analyserRef.current || !dataArrayRef.current) return
 
-    analyserRef.current.getByteFrequencyData(dataArrayRef.current)
+    analyserRef.current.getByteFrequencyData(dataArrayRef.current as any)
 
     // Calculate multiple volume metrics
     const sum = dataArrayRef.current.reduce((acc, value) => acc + value, 0)
@@ -94,17 +91,10 @@ export function useVoiceActivityDetection({
       silenceDuration: !isSpeakingRef.current ? (currentTime - lastVolumeCheckRef.current) / 1000 : 0,
     }))
 
-    // DEBUG: Log VAD decision for verification
-    debugLog(`VAD decision: ${isSpeaking ? "speech" : "silence"}`, {
-      volume: normalizedVolume.toFixed(3),
-      rms: rms.toFixed(3),
-      threshold: adaptiveThreshold.toFixed(3),
-    })
 
     if (isSpeaking && !isSpeakingRef.current) {
       // Speech started
       speechStartTimeRef.current = currentTime
-      debugLog("Speech detected - starting", { threshold: adaptiveThreshold })
 
       // Clear silence timer
       if (silenceTimerRef.current) {
@@ -114,15 +104,15 @@ export function useVoiceActivityDetection({
 
       // Set maximum duration timer
       maxDurationTimerRef.current = setTimeout(() => {
-        debugLog("Maximum speech duration reached")
+        debugLog("VAD", "max_duration_reached")
         onMaxDurationReached()
       }, maxSpeechDuration * 1000)
 
       isSpeakingRef.current = true
+      debugLog("VAD", "speech_start")
       onSpeechStart()
     } else if (!isSpeaking && isSpeakingRef.current) {
       // Potential speech end - start silence timer
-      debugLog(`Silence detected - starting ${silenceThreshold}s timer`)
 
       if (silenceTimerRef.current) {
         clearTimeout(silenceTimerRef.current)
@@ -131,25 +121,17 @@ export function useVoiceActivityDetection({
       silenceTimerRef.current = setTimeout(() => {
         const speechDuration = speechStartTimeRef.current ? (Date.now() - speechStartTimeRef.current) / 1000 : 0
 
-        debugLog("Silence threshold reached", {
-          speechDuration,
-          minRequired: minSpeechDuration,
-        })
-
         // Only trigger speech end if minimum duration was met
         if (speechDuration >= minSpeechDuration) {
           isSpeakingRef.current = false
+          debugLog("VAD", "speech_end", { duration: speechDuration })
           onSpeechEnd()
+          debugLog("VAD", "silence_detected")
           onSilenceDetected()
-          // DEBUG: indicate auto-stop trigger
-          debugLog("Auto-stop triggered due to silence")
-
           if (maxDurationTimerRef.current) {
             clearTimeout(maxDurationTimerRef.current)
             maxDurationTimerRef.current = null
           }
-        } else {
-          debugLog("Speech too short, continuing to listen")
         }
       }, silenceThreshold * 1000)
     }
@@ -165,13 +147,12 @@ export function useVoiceActivityDetection({
     onSpeechEnd,
     onSilenceDetected,
     onMaxDurationReached,
-    debugLog,
   ])
 
   const startVAD = useCallback(
     (stream: MediaStream, audioContext: AudioContext) => {
+      if (isVADRunningRef.current) return
       try {
-        debugLog("Starting enhanced VAD with stream")
 
         const source = audioContext.createMediaStreamSource(stream)
         const analyser = audioContext.createAnalyser()
@@ -191,17 +172,18 @@ export function useVoiceActivityDetection({
         speechStartTimeRef.current = null
         lastVolumeCheckRef.current = Date.now()
 
+        isVADRunningRef.current = true
+        debugLog("VAD", "vad_start")
         analyzeAudio()
-        debugLog("Enhanced VAD started successfully")
+
       } catch (error) {
-        debugLog("Error starting VAD:", error)
       }
     },
-    [analyzeAudio, debugLog],
+    [analyzeAudio],
   )
 
   const stopVAD = useCallback(() => {
-    debugLog("Stopping VAD")
+    if (!isVADRunningRef.current) return
 
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current)
@@ -219,7 +201,7 @@ export function useVoiceActivityDetection({
     }
 
     analyserRef.current = null
-    dataArrayRef.current = null
+    dataArrayRef.current = new Uint8Array()
     isSpeakingRef.current = false
     speechStartTimeRef.current = null
     volumeHistoryRef.current = []
@@ -231,16 +213,10 @@ export function useVoiceActivityDetection({
       silenceDuration: 0,
       isSpeaking: false,
     })
-  }, [debugLog])
 
-  const adjustSensitivity = useCallback(
-    (newThreshold: number) => {
-      debugLog("Adjusting VAD sensitivity", { newThreshold })
-      // This would be used to dynamically adjust the volume threshold
-      // based on environmental conditions
-    },
-    [debugLog],
-  )
+    debugLog("VAD", "vad_stop")
+    isVADRunningRef.current = false
+  }, [])
 
   useEffect(() => {
     return () => {
@@ -252,6 +228,5 @@ export function useVoiceActivityDetection({
     startVAD,
     stopVAD,
     vadMetrics,
-    adjustSensitivity,
   }
 }

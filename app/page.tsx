@@ -10,6 +10,7 @@ import { useConversationFlow, CallEndReason } from "@/hooks/use-conversation-flo
 import { AudioVisualizer } from "@/components/audio-visualizer"
 import { VADMonitor } from "@/components/vad-monitor"
 import { APIClient } from "@/lib/api-client"
+import { debugLog } from "@/lib/debug"
 
 interface ChatMessage {
   id: string
@@ -24,31 +25,34 @@ export default function AIPhoneSystem() {
   const [callState, setCallState] = useState<CallState>("idle")
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [showVADMonitor, setShowVADMonitor] = useState(false)
-  const endCallRef = useRef<(reason: CallEndReason | "user" | "error") => void>()
+  const endCallRef = useRef<(reason: CallEndReason | "user" | "error") => void>(null)
+  const ttsEndRef = useRef<number | null>(null)
 
-  const debugLog = useCallback((message: string, data?: any) => {
-    if (process.env.NODE_ENV === "development") {
-      console.log(`[AI Phone Debug] ${message}`, data || "")
-    }
-  }, [])
+  const log = useCallback(
+    (message: string, data?: any) => debugLog("AI Phone", message, data),
+    [],
+  )
 
   const addMessage = useCallback(
     (type: "user" | "ai", content: string) => {
       const newMessage: ChatMessage = {
-        id: Date.now().toString(),
+        id:
+          typeof crypto !== "undefined" && "randomUUID" in crypto
+            ? crypto.randomUUID()
+            : `${Date.now()}-${Math.random()}`,
         type,
         content,
         timestamp: new Date(),
       }
       setMessages((prev) => [...prev, newMessage])
-      debugLog(`Added ${type} message:`, content)
+      log(`Added ${type} message:`, content)
     },
-    [debugLog],
+    [log],
   )
 
   const handleConversationStateChange = useCallback(
     (conversationState: any) => {
-      debugLog("Conversation state changed:", conversationState)
+      log("Conversation state changed:", conversationState)
 
       // Map conversation states to call states
       switch (conversationState) {
@@ -72,15 +76,15 @@ export default function AIPhoneSystem() {
           break
       }
     },
-    [debugLog],
+    [log],
   )
 
   const handleCallEnd = useCallback(
     (reason: CallEndReason) => {
-      debugLog("Call ended by conversation flow", { reason })
+      log("Call ended by conversation flow", { reason })
       endCallRef.current?.(reason)
     },
-    [debugLog],
+    [log],
   )
 
   const {
@@ -103,11 +107,13 @@ export default function AIPhoneSystem() {
   const handleAudioData = useCallback(
     async (audioBlob: Blob) => {
       try {
-        debugLog("Processing audio data:", audioBlob.size)
+        log("Processing audio data:", audioBlob.size)
+        log("eou_sent")
         setCallState("processing")
 
         const apiClient = APIClient.getInstance()
         const result = await apiClient.processConversation(audioBlob, conversationMessages)
+        log("ack_received")
 
         // Process user message through conversation flow
         const userResult = processUserMessage(result.userMessage)
@@ -126,19 +132,32 @@ export default function AIPhoneSystem() {
 
           setCallState("ai-speaking")
 
-          audio.onended = () => {
-            debugLog("AI speech completed")
-
+          let resumed = false
+          const resumeListening = () => {
+            if (resumed) return
+            resumed = true
+            const ts = performance.now()
+            ttsEndRef.current = ts
+            log("AI speech completed", { tts_end_ts: ts })
             if (aiResult.shouldContinueListening) {
               startListening()
             }
           }
 
+          const fallbackId = setTimeout(() => {
+            log("AI speech onended fallback triggered")
+            resumeListening()
+          }, 10000)
+
+          audio.onended = () => {
+            clearTimeout(fallbackId)
+            resumeListening()
+          }
+
           audio.onerror = (error) => {
-            debugLog("Audio playback error:", error)
-            if (aiResult.shouldContinueListening) {
-              startListening()
-            }
+            clearTimeout(fallbackId)
+            log("Audio playback error:", error)
+            resumeListening()
           }
 
           await audio.play()
@@ -146,22 +165,22 @@ export default function AIPhoneSystem() {
           startListening()
         }
       } catch (error) {
-        debugLog("Error processing audio:", error)
+        log("Error processing audio:", error)
         setCallState("connected")
         startListening()
       }
     },
-    [conversationMessages, processUserMessage, processAIResponse, startListening, debugLog],
+    [conversationMessages, processUserMessage, processAIResponse, startListening, log],
   )
 
   const handleAudioError = useCallback(
     (error: Error) => {
-      debugLog("Audio error:", error)
+      log("Audio error:", error)
       alert(`音声エラー: ${error.message}`)
       endCall("error")
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [debugLog],
+    [log],
   )
 
   const { initializeAudio, startRecording, stopRecording, cleanup, isRecording, stream, audioContext } = useWebRTCAudio(
@@ -171,26 +190,41 @@ export default function AIPhoneSystem() {
     },
   )
 
+  const ensureAudioContextRunning = useCallback(
+    async (ctx?: AudioContext) => {
+      const target = ctx ?? audioContext
+      if (target && target.state === "suspended") {
+        try {
+          await target.resume()
+          log("AudioContext resumed")
+        } catch (e) {
+          log("Failed to resume AudioContext", e)
+        }
+      }
+    },
+    [audioContext, log],
+  )
+
   const handleSpeechStart = useCallback(() => {
-    debugLog("Speech started")
+    log("Speech started")
     setCallState("user-speaking")
     stopListening() // Stop silence timeout while user is speaking
-  }, [debugLog, stopListening])
+  }, [log, stopListening])
 
-  const handleSpeechEnd = useCallback(() => {
-    debugLog("Speech ended")
-    stopVAD()
-    stopRecording()
-  }, [stopRecording, debugLog])
+  const handleSpeechEnd = useCallback(async () => {
+    log("Speech ended")
+    await stopRecording()
+  }, [stopRecording, log])
 
-  const handleSilenceDetected = useCallback(() => {
-    debugLog("Silence detected - user finished speaking")
-  }, [debugLog])
+  const handleSilenceDetected = useCallback(async () => {
+    log("Silence detected - user finished speaking")
+    await stopRecording()
+  }, [log, stopRecording])
 
-  const handleMaxDurationReached = useCallback(() => {
-    debugLog("Maximum speech duration reached - forcing end")
-    stopRecording()
-  }, [stopRecording, debugLog])
+  const handleMaxDurationReached = useCallback(async () => {
+    log("Maximum speech duration reached - forcing end")
+    await stopRecording()
+  }, [stopRecording, log])
 
   // DEBUG: thresholds can be overridden via env vars for verification
   const vadSilenceThreshold = Number(process.env.NEXT_PUBLIC_VAD_SILENCE_THRESHOLD ?? 1.2)
@@ -207,14 +241,6 @@ export default function AIPhoneSystem() {
     onMaxDurationReached: handleMaxDurationReached,
   })
 
-  // TODO: Remove VAD threshold debug log after verification
-  useEffect(() => {
-    debugLog("Using VAD thresholds", {
-      silence: vadSilenceThreshold,
-      volume: vadVolumeThreshold,
-    })
-  }, [vadSilenceThreshold, vadVolumeThreshold, debugLog])
-
   // 再生解錠（無音オシレータで 0.1秒だけ音を出し、自動再生ブロックを解除）
   const unlockPlayback = useCallback(async (ctx?: AudioContext) => {
     try {
@@ -230,11 +256,11 @@ export default function AIPhoneSystem() {
       osc.stop(audioCtx.currentTime + 0.12)
       await new Promise((r) => setTimeout(r, 160))
 
-      debugLog("Playback unlocked")
+      log("Playback unlocked")
     } catch (e) {
-      debugLog("Playback unlock failed (non-fatal):", e)
+      log("Playback unlock failed (non-fatal):", e)
     }
-  }, [audioContext, debugLog])
+  }, [audioContext, log])
 
   // ウェルカムTTSを再生 → 再生終了後に会話開始＆リッスン開始
   const playWelcomeThenStart = useCallback(async () => {
@@ -261,36 +287,48 @@ export default function AIPhoneSystem() {
       const url = `data:${data.mimeType};base64,${data.audio}`
       const audio = new Audio(url)
 
-      audio.onended = () => {
-        debugLog("Welcome TTS ended; start conversation & listening")
-        setCallState("connected")
-        startConversation()
-        startListening()
-      }
-      audio.onerror = (err) => {
-        debugLog("Welcome TTS playback error:", err)
+      let resumed = false
+      const resumeStart = () => {
+        if (resumed) return
+        resumed = true
         setCallState("connected")
         startConversation()
         startListening()
       }
 
+      const fallbackId = setTimeout(() => {
+        log("Welcome TTS onended fallback triggered")
+        resumeStart()
+      }, 10000)
+
+      audio.onended = () => {
+        clearTimeout(fallbackId)
+        log("Welcome TTS ended; start conversation & listening")
+        resumeStart()
+      }
+      audio.onerror = (err) => {
+        clearTimeout(fallbackId)
+        log("Welcome TTS playback error:", err)
+        resumeStart()
+      }
+
       await audio.play()
     } catch (err) {
-      debugLog("Welcome TTS failed:", err)
+      log("Welcome TTS failed:", err)
       setCallState("connected")
       // 音が出なくても会話は続行できるようにフォールバック
       startConversation()
       startListening()
     }
-  }, [audioContext, startConversation, startListening, unlockPlayback, debugLog, setCallState])
+  }, [audioContext, startConversation, startListening, unlockPlayback, log, setCallState])
 
   const startCall = useCallback(async () => {
     try {
-      debugLog("Starting call...")
+      log("Starting call...")
       setCallState("connecting")
 
       const { stream: audioStream, audioContext: context } = await initializeAudio()
-      debugLog("Audio initialized successfully", { sampleRate: context?.sampleRate })
+      log("Audio initialized successfully", { sampleRate: context?.sampleRate })
 
       // 先に再生解錠（これが無いとウェルカム音声がブロックされることがある）
       await unlockPlayback(context)
@@ -299,15 +337,15 @@ export default function AIPhoneSystem() {
       setCallState("connected")
       await playWelcomeThenStart()
     } catch (error) {
-      debugLog("Error starting call:", error)
+      log("Error starting call:", error)
       setCallState("idle")
       alert("マイクへのアクセスが必要です。ブラウザの設定を確認してください。")
     }
-  }, [initializeAudio, unlockPlayback, playWelcomeThenStart, debugLog])
+  }, [initializeAudio, unlockPlayback, playWelcomeThenStart, log])
 
   const endCall = useCallback(
     (reason: CallEndReason | "user" | "error") => {
-      debugLog(`Ending call... reason=${reason}`)
+      log(`Ending call... reason=${reason}`)
 
       stopVAD()
       cleanup()
@@ -316,57 +354,176 @@ export default function AIPhoneSystem() {
       setCallState("idle")
       setMessages([])
 
-      debugLog("Call ended")
+      log("Call ended")
     },
-    [stopVAD, cleanup, resetConversation, debugLog],
+    [stopVAD, cleanup, resetConversation, log],
   )
   endCallRef.current = endCall
+
+  useEffect(() => {
+    if (callState === "ai-speaking") {
+      stopVAD()
+      void stopRecording()
+    }
+  }, [callState, stopVAD, stopRecording])
 
   // Start listening when conversation flow indicates
   useEffect(() => {
     const setup = async () => {
-      if (
-        conversationState === "listening" &&
-        stream &&
-        audioContext &&
-        !isRecording
-      ) {
-        if (audioContext.state === "suspended") {
+      if (conversationState === "listening" && !isRecording) {
+        let currentStream = stream
+        let currentContext = audioContext
+
+        if (!currentStream || !currentContext) {
           try {
-            await audioContext.resume()
-            debugLog("AudioContext resumed before starting VAD")
+            const result = await initializeAudio()
+            currentStream = result.stream
+            currentContext = result.audioContext
+            log("Reinitialized audio for listening")
           } catch (err) {
-            debugLog("Failed to resume AudioContext", err)
+            log("Failed to reinitialize audio", err)
+            return
           }
         }
 
-        if (audioContext.state === "running") {
-          debugLog("Starting recording and VAD based on conversation state")
+        await ensureAudioContextRunning(currentContext)
+
+        if (currentContext.state === "running") {
+          const recStart = performance.now()
+          log("Starting recording and VAD based on conversation state")
           await startRecording()
-          startVAD(stream, audioContext)
+          log("Recording started", {
+            rec_start_ts: recStart,
+            latency_ms: Math.round(recStart - (ttsEndRef.current ?? recStart)),
+          })
+          ttsEndRef.current = null
+          startVAD(currentStream, currentContext)
         } else {
-          debugLog("AudioContext not running, skipping VAD start", {
-            state: audioContext.state,
+          log("AudioContext not running, skipping VAD start", {
+            state: currentContext.state,
           })
         }
       } else {
-        debugLog("Skip VAD start (missing stream/context or already recording)", {
+        log("Skip VAD start (missing stream/context or already recording)", {
           conversationState,
           hasStream: !!stream,
           ctxState: audioContext?.state,
           isRecording,
         })
       }
-
     }
     setup()
-  }, [conversationState, stream, audioContext, isRecording, startVAD, startRecording, debugLog])
+  }, [
+    conversationState,
+    stream,
+    audioContext,
+    isRecording,
+    startVAD,
+    startRecording,
+    initializeAudio,
+    ensureAudioContextRunning,
+    log,
+  ])
+
+  // Resume AudioContext and mic on visibility/focus changes
+  useEffect(() => {
+    const handleVisibility = async () => {
+      if (document.visibilityState !== "visible") return
+
+      if (audioContext?.state === "suspended") {
+        try {
+          await audioContext.resume()
+          log("AudioContext resumed after visibility change")
+        } catch (e) {
+          log("AudioContext resume failed", e)
+        }
+      }
+
+      const tracks = stream?.getAudioTracks() ?? []
+      const ended = tracks.length > 0 && tracks.every((t) => t.readyState === "ended")
+      if (!stream || ended) {
+        try {
+          const result = await initializeAudio()
+          log("Reacquired audio after visibility change")
+          if (conversationState === "listening" && !isRecording) {
+            await ensureAudioContextRunning(result.audioContext)
+            const recStart = performance.now()
+            await startRecording()
+            log("Recording restarted", {
+              rec_start_ts: recStart,
+              latency_ms: Math.round(recStart - (ttsEndRef.current ?? recStart)),
+            })
+            ttsEndRef.current = null
+            startVAD(result.stream, result.audioContext)
+          }
+        } catch (err) {
+          log("Failed to reacquire audio after visibility change", err)
+        }
+      }
+    }
+
+    document.addEventListener("visibilitychange", handleVisibility)
+    window.addEventListener("focus", handleVisibility)
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibility)
+      window.removeEventListener("focus", handleVisibility)
+    }
+  }, [
+    audioContext,
+    stream,
+    initializeAudio,
+    conversationState,
+    isRecording,
+    startRecording,
+    startVAD,
+    ensureAudioContextRunning,
+    log,
+  ])
+
+  // Reacquire microphone when track ends
+  useEffect(() => {
+    if (!stream) return
+    const handleTrackEnded = async () => {
+      log("MediaStream track ended")
+      try {
+        const result = await initializeAudio()
+        log("Reinitialized audio after track ended")
+        if (conversationState === "listening" && !isRecording) {
+          await ensureAudioContextRunning(result.audioContext)
+          const recStart = performance.now()
+          await startRecording()
+          log("Recording restarted", {
+            rec_start_ts: recStart,
+            latency_ms: Math.round(recStart - (ttsEndRef.current ?? recStart)),
+          })
+          ttsEndRef.current = null
+          startVAD(result.stream, result.audioContext)
+        }
+      } catch (err) {
+        log("Failed to reinitialize audio after track ended", err)
+      }
+    }
+    const tracks = stream.getTracks()
+    tracks.forEach((track) => track.addEventListener("ended", handleTrackEnded))
+    return () => {
+      tracks.forEach((track) => track.removeEventListener("ended", handleTrackEnded))
+    }
+  }, [
+    stream,
+    initializeAudio,
+    conversationState,
+    isRecording,
+    startRecording,
+    startVAD,
+    ensureAudioContextRunning,
+    log,
+  ])
 
   // Clean up only when component unmounts; avoid triggering endCall indirectly
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     return () => {
-      debugLog("Unmount cleanup: stopping audio only")
+      log("Unmount cleanup: stopping audio only")
       stopVAD()
       cleanup()
       resetConversation()
