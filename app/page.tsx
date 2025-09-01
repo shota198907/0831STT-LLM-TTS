@@ -33,6 +33,13 @@ export default function AIPhoneSystem() {
     [],
   )
 
+  useEffect(() => {
+    log("Component mounted")
+    return () => {
+      log("Component unmounted")
+    }
+  }, [log])
+
   const addMessage = useCallback(
     (type: "user" | "ai", content: string) => {
       const newMessage: ChatMessage = {

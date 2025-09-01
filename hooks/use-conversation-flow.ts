@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useCallback, useRef, useEffect } from "react"
+import { debugLog } from "@/lib/debug"
 
 interface ConversationMessage {
   id: string
@@ -59,9 +60,13 @@ export function useConversationFlow({
     hasUserResponded: false,
   })
 
+  const log = useCallback(
+    (message: string, data?: any) => debugLog("ConversationFlow", message, data),
+    [],
+  )
+
   const silenceTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const connectionCheckTimeoutRef = useRef<NodeJS.Timeout | null>(null)
-
 
   const addMessage = useCallback(
     (type: "user" | "ai", content: string) => {
@@ -77,7 +82,7 @@ export function useConversationFlow({
 
       setMessages((prev) => [...prev, newMessage])
       onMessageAdd(type, content)
-
+      log(`addMessage_${type}`)
 
       // Update context based on message content
       if (type === "user") {
@@ -89,15 +94,16 @@ export function useConversationFlow({
 
       return newMessage
     },
-    [onMessageAdd],
+    [onMessageAdd, log],
   )
 
   const changeState = useCallback(
     (newState: ConversationState) => {
+      log("changeState", newState)
       setState(newState)
       onStateChange(newState)
     },
-    [state, onStateChange],
+    [state, onStateChange, log],
   )
 
   const analyzeAIResponse = useCallback((response: string) => {
@@ -151,6 +157,7 @@ export function useConversationFlow({
   }, [])
 
   const startSilenceTimeout = useCallback(() => {
+    log("startSilenceTimeout")
 
     if (silenceTimeoutRef.current) {
       clearTimeout(silenceTimeoutRef.current)
@@ -201,6 +208,7 @@ export function useConversationFlow({
       }, maxSilenceBeforeEnd)
     }, silenceTimeoutDuration)
   }, [
+    log,
     silenceTimeoutDuration,
     maxSilenceBeforeEnd,
     addMessage,
@@ -210,6 +218,7 @@ export function useConversationFlow({
   ])
 
   const clearAllTimeouts = useCallback(() => {
+    log("clearAllTimeouts")
     if (silenceTimeoutRef.current) {
       clearTimeout(silenceTimeoutRef.current)
       silenceTimeoutRef.current = null
@@ -218,10 +227,11 @@ export function useConversationFlow({
       clearTimeout(connectionCheckTimeoutRef.current)
       connectionCheckTimeoutRef.current = null
     }
-  }, [])
+  }, [log])
 
   const processUserMessage = useCallback(
     (userMessage: string) => {
+      log("processUserMessage", userMessage)
 
       clearAllTimeouts()
       addMessage("user", userMessage)
@@ -254,11 +264,21 @@ export function useConversationFlow({
 
       return { shouldEndConversation: false }
     },
-    [state, context, addMessage, changeState, onCallEnd, analyzeUserResponse, clearAllTimeouts],
+    [
+      state,
+      context,
+      addMessage,
+      changeState,
+      onCallEnd,
+      analyzeUserResponse,
+      clearAllTimeouts,
+      log,
+    ],
   )
 
   const processAIResponse = useCallback(
     (aiResponse: string) => {
+      log("processAIResponse")
 
       addMessage("ai", aiResponse)
       const analysis = analyzeAIResponse(aiResponse)
@@ -293,10 +313,11 @@ export function useConversationFlow({
       changeState("waiting-for-response")
       return { shouldContinueListening: true }
     },
-    [addMessage, changeState, onCallEnd, analyzeAIResponse],
+    [addMessage, changeState, onCallEnd, analyzeAIResponse, log],
   )
 
   const startConversation = useCallback(() => {
+    log("startConversation")
     changeState("greeting")
 
     const greetingMessage = "アシスタントです。ご用件をどうぞ。"
@@ -305,20 +326,23 @@ export function useConversationFlow({
     setTimeout(() => {
       changeState("listening")
     }, 2000)
-  }, [addMessage, changeState])
+  }, [addMessage, changeState, log])
 
   const startListening = useCallback(() => {
+    log("startListening")
     changeState("listening")
     if (context.hasUserResponded) {
       startSilenceTimeout()
     }
-  }, [changeState, startSilenceTimeout, context.hasUserResponded])
+  }, [changeState, startSilenceTimeout, context.hasUserResponded, log])
 
   const stopListening = useCallback(() => {
+    log("stopListening")
     clearAllTimeouts()
-  }, [clearAllTimeouts])
+  }, [clearAllTimeouts, log])
 
   const endConversation = useCallback(() => {
+    log("endConversation")
     clearAllTimeouts()
     changeState("ended")
     setMessages([])
@@ -329,12 +353,13 @@ export function useConversationFlow({
       isAwaitingEndConfirmation: false,
       hasUserResponded: false,
     })
-  }, [clearAllTimeouts, changeState])
+  }, [clearAllTimeouts, changeState, log])
 
   const resetConversation = useCallback(() => {
+    log("resetConversation")
     endConversation()
     changeState("idle")
-  }, [endConversation, changeState])
+  }, [endConversation, changeState, log])
 
   // Cleanup on unmount
   useEffect(() => {
