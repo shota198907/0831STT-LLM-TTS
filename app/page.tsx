@@ -12,6 +12,9 @@ import { VADMonitor } from "@/components/vad-monitor"
 import { APIClient } from "@/lib/api-client"
 import { debugLog } from "@/lib/debug"
 
+// ページ読み込み時にモジュールが評価されたことをログに残す
+debugLog("AI Phone", "Page module loaded")
+
 interface ChatMessage {
   id: string
   type: "user" | "ai"
@@ -119,8 +122,16 @@ export default function AIPhoneSystem() {
         setCallState("processing")
 
         const apiClient = APIClient.getInstance()
-        const result = await apiClient.processConversation(audioBlob, conversationMessages)
+        const result = await apiClient.processConversation(
+          audioBlob,
+          conversationMessages,
+        )
         log("ack_received")
+        log("conversation_result", {
+          user: result.userMessage,
+          ai: result.aiResponse,
+          hasAudio: !!result.audioBase64,
+        })
 
         // Process user message through conversation flow
         const userResult = processUserMessage(result.userMessage)
@@ -235,7 +246,7 @@ export default function AIPhoneSystem() {
 
   // DEBUG: thresholds can be overridden via env vars for verification
   const vadSilenceThreshold = Number(process.env.NEXT_PUBLIC_VAD_SILENCE_THRESHOLD ?? 1.2)
-  const vadVolumeThreshold = Number(process.env.NEXT_PUBLIC_VAD_VOLUME_THRESHOLD ?? 0.01)
+  const vadVolumeThreshold = Number(process.env.NEXT_PUBLIC_VAD_VOLUME_THRESHOLD ?? 0.03)
 
   const { startVAD, stopVAD, vadMetrics } = useVoiceActivityDetection({
     silenceThreshold: vadSilenceThreshold,

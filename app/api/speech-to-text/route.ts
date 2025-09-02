@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
 
     // ← ここで MIME からエンコーディングを判定
     const mime = (audioFile.type || "").toLowerCase()
-    debugLog("API STT", "received", { mime })
+    debugLog("API STT", "received", { mime, bytes: audioBuffer.length })
     let overrides: any = {}
     if (mime.includes("webm")) {
       overrides = { encoding: "WEBM_OPUS" }
@@ -29,6 +29,7 @@ export async function POST(request: NextRequest) {
     }
 
     const googleServices = GoogleCloudServices.getInstance()
+    debugLog("API STT", "stt_start")
     const transcription = await googleServices.speechToText(audioBuffer, overrides)
     debugLog("API STT", "transcribed", { transcription })
 
@@ -41,6 +42,7 @@ export async function POST(request: NextRequest) {
       timestamp: new Date().toISOString(),
     })
   } catch (error) {
+    debugLog("API STT", "error", { error: String(error) })
     return NextResponse.json({ error: `Speech-to-text processing failed: ${error}` }, { status: 500 })
   }
 }
