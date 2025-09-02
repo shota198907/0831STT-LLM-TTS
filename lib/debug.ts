@@ -4,10 +4,11 @@ export const debugEnabled =
   process.env.DEBUG_LOGS !== "false"
 
 if (debugEnabled) {
-  console.log("[Debug] logging enabled")
+  console.log("[Debug] logging enabled");
 } else {
-  console.log("[Debug] logging disabled")
+  console.log("[Debug] logging disabled");
 }
+
 
 export function debugLog(scope: string, message: string, data?: any) {
   if (!debugEnabled) return
