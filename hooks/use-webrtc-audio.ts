@@ -100,30 +100,30 @@ export function useWebRTCAudio({ onAudioData, onError }: WebRTCAudioOptions) {
   }, [isRecording, onAudioData, onError])
 
   const stopRecording = useCallback(async () => {
-    if (!mediaRecorderRef.current) {
-      debugLog("WebRTC", "stopRecording skipped", {
-        hasRecorder: false,
-        isRecording,
-        isStopping: isStoppingRef.current,
-      })
-      return Promise.resolve()
-    }
+  if (!mediaRecorderRef.current) {
+    debugLog("WebRTC", "stopRecording skipped", {
+      hasRecorder: false,
+      isRecording,
+      isStopping: isStoppingRef.current,
+    })
+    return
+  }
 
-    if (isStoppingRef.current && stopPromiseRef.current) {
-      debugLog("WebRTC", "stopRecording awaiting existing")
-      return stopPromiseRef.current
-    }
+  if (isStoppingRef.current && stopPromiseRef.current) {
+    debugLog("WebRTC", "stopRecording awaiting existing")
+    return stopPromiseRef.current
+  }
 
-    if (!isRecording) {
-      debugLog("WebRTC", "stopRecording skipped", {
-        hasRecorder: !!mediaRecorderRef.current,
-        isRecording,
-        isStopping: isStoppingRef.current,
-      })
-      return Promise.resolve()
-    }
+  if (!isRecording) {
+    debugLog("WebRTC", "stopRecording skipped", {
+      hasRecorder: !!mediaRecorderRef.current,
+      isRecording,
+      isStopping: isStoppingRef.current,
+    })
+    return
+  }
 
-    debugLog("WebRTC", "stopRecording invoked")
+  debugLog("WebRTC", "stopRecording invoked")
 
     isStoppingRef.current = true
     const recorder = mediaRecorderRef.current

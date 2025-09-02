@@ -307,7 +307,6 @@ export default function AIPhoneSystem() {
       } else {
         await unlockPlayback()
       }
-      
 
       const url = `data:${data.mimeType};base64,${data.audio}`
       const audio = new Audio(url)
@@ -381,18 +380,22 @@ export default function AIPhoneSystem() {
         log("Call ended")
       }
 
-      log("Stopping recording before ending call")
-      stopRecording()
-        .then(() => {
-          log("Recording stopped prior to cleanup")
-          finalize()
-        })
-        .catch((err) => {
-          log("Failed to stop recording before end", err)
-          finalize()
-        })
+      if (isRecording) {
+        log("Stopping recording before ending call")
+        stopRecording()
+          .then(() => {
+            log("Recording stopped prior to cleanup")
+            finalize()
+          })
+          .catch((err) => {
+            log("Failed to stop recording before end", err)
+            finalize()
+          })
+      } else {
+        finalize()
+      }
     },
-    [stopRecording, stopVAD, cleanup, resetConversation, log],
+    [isRecording, stopRecording, stopVAD, cleanup, resetConversation, log],
   )
   endCallRef.current = endCall
 
