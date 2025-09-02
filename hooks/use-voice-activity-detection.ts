@@ -51,8 +51,6 @@ export function useVoiceActivityDetection({
     isSpeaking: false,
   })
 
-
-
   const analyzeAudio = useCallback(() => {
     if (!analyserRef.current || !dataArrayRef.current) return
 
@@ -61,7 +59,7 @@ export function useVoiceActivityDetection({
     // Calculate multiple volume metrics
     const sum = dataArrayRef.current.reduce((acc, value) => acc + value, 0)
     const average = sum / dataArrayRef.current.length
-    const normalizedVolume = average / 255
+    const normalizedVolume = average / dataArrayRef.current.length > 0 ? average / 255 : 0
 
     // Calculate RMS (Root Mean Square) for better speech detection
     const rms = Math.sqrt(
@@ -74,8 +72,12 @@ export function useVoiceActivityDetection({
       volumeHistoryRef.current.shift()
     }
 
+    // ★ デバッグログ追加
+    console.log("[CHECK] analyzeAudio", { normalizedVolume, rms, average })
+
     // Calculate adaptive threshold based on background noise
-    const averageVolume = volumeHistoryRef.current.reduce((acc, vol) => acc + vol, 0) / volumeHistoryRef.current.length
+    const averageVolume =
+      volumeHistoryRef.current.reduce((acc, vol) => acc + vol, 0) / volumeHistoryRef.current.length
     const adaptiveThreshold = Math.max(volumeThreshold, averageVolume * 1.5)
 
     const currentTime = Date.now()
@@ -90,7 +92,6 @@ export function useVoiceActivityDetection({
         isSpeakingRef.current && speechStartTimeRef.current ? (currentTime - speechStartTimeRef.current) / 1000 : 0,
       silenceDuration: !isSpeakingRef.current ? (currentTime - lastVolumeCheckRef.current) / 1000 : 0,
     }))
-
 
     if (isSpeaking && !isSpeakingRef.current) {
       // Speech started
@@ -113,7 +114,6 @@ export function useVoiceActivityDetection({
       onSpeechStart()
     } else if (!isSpeaking && isSpeakingRef.current) {
       // Potential speech end - start silence timer
-
       if (silenceTimerRef.current) {
         clearTimeout(silenceTimerRef.current)
       }
@@ -153,7 +153,11 @@ export function useVoiceActivityDetection({
     (stream: MediaStream, audioContext: AudioContext) => {
       if (isVADRunningRef.current) return
       try {
-
+        debugLog("CHECK", "startVAD called", {
+          hasStream: !!stream,
+          trackSettings: stream.getAudioTracks()[0]?.getSettings(),
+          sampleRate: audioContext.sampleRate,
+        })
         const source = audioContext.createMediaStreamSource(stream)
         const analyser = audioContext.createAnalyser()
 
@@ -175,8 +179,8 @@ export function useVoiceActivityDetection({
         isVADRunningRef.current = true
         debugLog("VAD", "vad_start")
         analyzeAudio()
-
       } catch (error) {
+        debugLog("VAD", "error_startVAD", { error })
       }
     },
     [analyzeAudio],
@@ -219,10 +223,19 @@ export function useVoiceActivityDetection({
   }, [])
 
   useEffect(() => {
+    const interval = setInterval(() => {
+      debugLog("VAD", "summary", {
+        avgVolume: vadMetrics.averageVolume.toFixed(3),
+        currentVolume: vadMetrics.currentVolume.toFixed(3),
+        isSpeaking: vadMetrics.isSpeaking,
+      })
+    }, 1000)
+
     return () => {
+      clearInterval(interval)
       stopVAD()
     }
-  }, [stopVAD])
+  }, [vadMetrics, stopVAD])
 
   return {
     startVAD,

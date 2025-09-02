@@ -270,7 +270,7 @@ export default function AIPhoneSystem() {
   const unlockPlayback = useCallback(async (ctx?: AudioContext) => {
     try {
       const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext
-      const audioCtx = ctx ?? audioContext ?? new Ctx({ sampleRate: 16000 })
+      const audioCtx = ctx ?? audioContext ?? new Ctx({ sampleRate: 48000 })
       if (audioCtx.state === "suspended") await audioCtx.resume()
 
       const osc = audioCtx.createOscillator()

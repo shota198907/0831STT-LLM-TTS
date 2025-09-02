@@ -87,7 +87,7 @@ export class GoogleCloudServices {
   /**
    * STT の基本設定。必要に応じて上書き（encoding / sampleRateHertz など）を適用。
    * - デフォルトは ENCODING_UNSPECIFIED（Google 側の自動判定）
-   * - WAV(LINEAR16) のときだけ sampleRateHertz を有効化（未指定なら 16000）
+   * - WAV(LINEAR16) のときだけ sampleRateHertz を有効化（未指定なら 48000）
    */
   public getSpeechToTextConfig(
     overrides: Partial<{
@@ -112,7 +112,7 @@ export class GoogleCloudServices {
     if (merged.encoding !== "LINEAR16") {
       delete merged.sampleRateHertz
     } else {
-      if (!merged.sampleRateHertz) merged.sampleRateHertz = 16000
+      if (!merged.sampleRateHertz) merged.sampleRateHertz = 48000
     }
 
     return merged

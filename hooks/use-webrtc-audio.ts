@@ -23,17 +23,20 @@ export function useWebRTCAudio({ onAudioData, onError }: WebRTCAudioOptions) {
     try {
 
       const stream = await navigator.mediaDevices.getUserMedia({
+        
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true,
-          sampleRate: 16000,
+          sampleRate: 48000,
           channelCount: 1,
         },
       })
+      console.log("[CHECK] stream settings", stream.getAudioTracks()[0]?.getSettings())
+
 
       const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({
-        sampleRate: 16000,
+        sampleRate: 48000,
       })
 
       if (audioContext.state === "suspended") {
@@ -87,7 +90,7 @@ export function useWebRTCAudio({ onAudioData, onError }: WebRTCAudioOptions) {
       }
 
       mediaRecorderRef.current = mediaRecorder
-      mediaRecorder.start(250) // 収集間隔を少し長くして安定化
+      mediaRecorder.start(1000) // 収集間隔を1秒に変更
       setIsRecording(true)
 
       debugLog("WebRTC", "Recording started")
