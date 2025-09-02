@@ -106,6 +106,7 @@ export default function AIPhoneSystem() {
     processUserMessage,
     processAIResponse,
     resetConversation,
+    clearAllTimeouts,
   } = useConversationFlow({
     onStateChange: handleConversationStateChange,
     onMessageAdd: addMessage,
@@ -121,12 +122,18 @@ export default function AIPhoneSystem() {
         log("eou_sent")
         setCallState("processing")
 
+        log("Sending audio for STT and AI processing")
         const apiClient = APIClient.getInstance()
         const result = await apiClient.processConversation(
           audioBlob,
           conversationMessages,
         )
         log("ack_received")
+       codex/add-logging-to-track-processing-flow-dk42gt
+        log("stt_text", result.userMessage)
+        log("ai_text", result.aiResponse)
+        log("tts_audio", { present: !!result.audioBase64 })
+         main
         log("conversation_result", {
           user: result.userMessage,
           ai: result.aiResponse,
@@ -226,8 +233,8 @@ export default function AIPhoneSystem() {
   const handleSpeechStart = useCallback(() => {
     log("Speech started")
     setCallState("user-speaking")
-    stopListening() // Stop silence timeout while user is speaking
-  }, [log, stopListening])
+    clearAllTimeouts() // ユーザー発話中は沈黙タイマーのみ停止
+  }, [log, clearAllTimeouts])
 
   const handleSpeechEnd = useCallback(async () => {
     log("Speech ended")
@@ -240,8 +247,9 @@ export default function AIPhoneSystem() {
   }, [log, stopRecording])
 
   const handleMaxDurationReached = useCallback(async () => {
-    log("Maximum speech duration reached - forcing end")
+    log("Maximum speech duration reached - forcing stop")
     await stopRecording()
+    log("Recording stopped due to max duration")
   }, [stopRecording, log])
 
   // DEBUG: thresholds can be overridden via env vars for verification
@@ -365,16 +373,31 @@ export default function AIPhoneSystem() {
     (reason: CallEndReason | "user" | "error") => {
       log(`Ending call... reason=${reason}`)
 
-      stopVAD()
-      cleanup()
-      resetConversation()
+      const finalize = () => {
+        stopVAD()
+        cleanup()
+        resetConversation()
+        setCallState("idle")
+        setMessages([])
+        log("Call ended")
+      }
 
-      setCallState("idle")
-      setMessages([])
-
-      log("Call ended")
+      if (isRecording) {
+        log("Stopping recording before ending call")
+        stopRecording()
+          .then(() => {
+            log("Recording stopped prior to cleanup")
+            finalize()
+          })
+          .catch((err) => {
+            log("Failed to stop recording before end", err)
+            finalize()
+          })
+      } else {
+        finalize()
+      }
     },
-    [stopVAD, cleanup, resetConversation, log],
+    [isRecording, stopRecording, stopVAD, cleanup, resetConversation, log],
   )
   endCallRef.current = endCall
 

@@ -55,6 +55,11 @@ export function useWebRTCAudio({ onAudioData, onError }: WebRTCAudioOptions) {
 
   const startRecording = useCallback(async () => {
     if (!streamRef.current || isRecording || isStartingRef.current) {
+      debugLog("WebRTC", "startRecording skipped", {
+        hasStream: !!streamRef.current,
+        isRecording,
+        isStarting: isStartingRef.current,
+      })
       return
     }
 
@@ -95,8 +100,15 @@ export function useWebRTCAudio({ onAudioData, onError }: WebRTCAudioOptions) {
 
   const stopRecording = useCallback(async () => {
     if (!mediaRecorderRef.current || !isRecording || isStoppingRef.current) {
+      debugLog("WebRTC", "stopRecording skipped", {
+        hasRecorder: !!mediaRecorderRef.current,
+        isRecording,
+        isStopping: isStoppingRef.current,
+      })
       return
     }
+
+    debugLog("WebRTC", "stopRecording invoked")
 
     isStoppingRef.current = true
     const recorder = mediaRecorderRef.current
@@ -124,6 +136,7 @@ export function useWebRTCAudio({ onAudioData, onError }: WebRTCAudioOptions) {
         recorder.requestData()
         recorder.stop()
         setIsRecording(false)
+        debugLog("WebRTC", "stop command issued")
       } catch (error) {
         onError(error as Error)
         isStoppingRef.current = false

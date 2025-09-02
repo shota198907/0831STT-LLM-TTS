@@ -331,13 +331,10 @@ export function useConversationFlow({
   const startListening = useCallback(() => {
     log("startListening")
     changeState("listening")
-
-useEffect(() => {
-  clearAllTimeouts();              // 先に全タイマー解除
-  if (context.hasUserResponded) {  // 応答後だけ5秒無音タイマー
-    startSilenceTimeout();
-  }
-}, [startSilenceTimeout, clearAllTimeouts, context.hasUserResponded, log]);
+　  codex/add-logging-to-track-processing-flow-dk42gt
+    clearAllTimeouts()
+    startSilenceTimeout()
+  }, [changeState, startSilenceTimeout, clearAllTimeouts, log])
 
 
   const stopListening = useCallback(() => {
