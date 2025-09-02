@@ -16,6 +16,7 @@ export function useWebRTCAudio({ onAudioData, onError }: WebRTCAudioOptions) {
   const audioChunksRef = useRef<Blob[]>([])
   const isStartingRef = useRef(false)
   const isStoppingRef = useRef(false)
+  const stopPromiseRef = useRef<Promise<void> | null>(null)
 
 
   const initializeAudio = useCallback(async (): Promise<{ stream: MediaStream; audioContext: AudioContext }> => {
@@ -99,25 +100,46 @@ export function useWebRTCAudio({ onAudioData, onError }: WebRTCAudioOptions) {
   }, [isRecording, onAudioData, onError])
 
   const stopRecording = useCallback(async () => {
-    if (!mediaRecorderRef.current || !isRecording || isStoppingRef.current) {
-      debugLog("WebRTC", "stopRecording skipped", {
-        hasRecorder: !!mediaRecorderRef.current,
-        isRecording,
-        isStopping: isStoppingRef.current,
-      })
-      return
-    }
+  if (!mediaRecorderRef.current) {
+    debugLog("WebRTC", "stopRecording skipped", {
+      hasRecorder: false,
+      isRecording,
+      isStopping: isStoppingRef.current,
+    })
+    return
+  }
 
-    debugLog("WebRTC", "stopRecording invoked")
+  if (isStoppingRef.current && stopPromiseRef.current) {
+    debugLog("WebRTC", "stopRecording awaiting existing")
+    return stopPromiseRef.current
+  }
+
+  if (!isRecording) {
+    debugLog("WebRTC", "stopRecording skipped", {
+      hasRecorder: !!mediaRecorderRef.current,
+      isRecording,
+      isStopping: isStoppingRef.current,
+    })
+    return
+  }
+
+  debugLog("WebRTC", "stopRecording invoked")
 
     isStoppingRef.current = true
     const recorder = mediaRecorderRef.current
     const start = performance.now()
 
-    return new Promise<void>((resolve, reject) => {
+    stopPromiseRef.current = new Promise<void>((resolve, reject) => {
       recorder.onstop = async () => {
         try {
-          const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm;codecs=opus" })
+          const audioBlob = new Blob(audioChunksRef.current, {
+            type: recorder.mimeType || "audio/webm;codecs=opus",
+          })
+          debugLog("WebRTC", "recording_blob", {
+            mime: recorder.mimeType,
+            blobType: audioBlob.type,
+            size: audioBlob.size,
+          })
           await onAudioData(audioBlob)
           const end = performance.now()
           debugLog("WebRTC", "Flushed last chunk", {
@@ -129,6 +151,7 @@ export function useWebRTCAudio({ onAudioData, onError }: WebRTCAudioOptions) {
           reject(err)
         } finally {
           isStoppingRef.current = false
+          stopPromiseRef.current = null
         }
       }
 
@@ -140,9 +163,12 @@ export function useWebRTCAudio({ onAudioData, onError }: WebRTCAudioOptions) {
       } catch (error) {
         onError(error as Error)
         isStoppingRef.current = false
+        stopPromiseRef.current = null
         reject(error)
       }
     })
+
+    return stopPromiseRef.current
   }, [isRecording, onAudioData, onError])
 
   const cleanup = useCallback(() => {

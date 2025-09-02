@@ -111,8 +111,8 @@ export default function AIPhoneSystem() {
     onStateChange: handleConversationStateChange,
     onMessageAdd: addMessage,
     onCallEnd: handleCallEnd,
-    silenceTimeoutDuration: 6000,
-    maxSilenceBeforeEnd: 6000,
+    silenceTimeoutDuration: 5000,
+    maxSilenceBeforeEnd: 10000,
   })
 
   const handleAudioData = useCallback(
@@ -129,11 +129,9 @@ export default function AIPhoneSystem() {
           conversationMessages,
         )
         log("ack_received")
-       codex/add-logging-to-track-processing-flow-dk42gt
         log("stt_text", result.userMessage)
         log("ai_text", result.aiResponse)
         log("tts_audio", { present: !!result.audioBase64 })
-         main
         log("conversation_result", {
           user: result.userMessage,
           ai: result.aiResponse,
@@ -255,6 +253,7 @@ export default function AIPhoneSystem() {
   // DEBUG: thresholds can be overridden via env vars for verification
   const vadSilenceThreshold = Number(process.env.NEXT_PUBLIC_VAD_SILENCE_THRESHOLD ?? 1.2)
   const vadVolumeThreshold = Number(process.env.NEXT_PUBLIC_VAD_VOLUME_THRESHOLD ?? 0.03)
+  log("VAD thresholds", { silence: vadSilenceThreshold, volume: vadVolumeThreshold })
 
   const { startVAD, stopVAD, vadMetrics } = useVoiceActivityDetection({
     silenceThreshold: vadSilenceThreshold,
@@ -308,7 +307,6 @@ export default function AIPhoneSystem() {
       } else {
         await unlockPlayback()
       }
-      
 
       const url = `data:${data.mimeType};base64,${data.audio}`
       const audio = new Audio(url)
