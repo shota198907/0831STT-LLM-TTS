@@ -33,7 +33,9 @@ export async function POST(request: NextRequest) {
     // Process audio if provided
     if (audioFile) {
       const audioBuffer = Buffer.from(await audioFile.arrayBuffer())
+      debugLog("API Conversation", "stt_start", { bytes: audioBuffer.length })
       userMessage = await googleServices.speechToText(audioBuffer)
+      debugLog("API Conversation", "stt_result", { text: userMessage })
 
       if (!userMessage.trim()) {
         return NextResponse.json({ error: "No speech detected" }, { status: 400 })
@@ -54,7 +56,9 @@ export async function POST(request: NextRequest) {
     debugLog("API Conversation", "ai_response", { length: aiResponse.length })
 
     // Generate TTS audio for AI response
+    debugLog("API Conversation", "tts_start")
     const audioBuffer = await googleServices.textToSpeech(aiResponse)
+    debugLog("API Conversation", "tts_result", { bytes: audioBuffer.length })
     const audioBase64 = audioBuffer.toString("base64")
 
     // Analyze conversation state
@@ -80,6 +84,7 @@ export async function POST(request: NextRequest) {
       },
     })
   } catch (error) {
+    debugLog("API Conversation", "error", { error: String(error) })
     return NextResponse.json({ error: `Conversation processing failed: ${error}` }, { status: 500 })
   }
 }
