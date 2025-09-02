@@ -24,7 +24,7 @@ interface VADMetrics {
 
 export function useVoiceActivityDetection({
   silenceThreshold = 0.8,
-  volumeThreshold = 0.01,
+  volumeThreshold = 0.03,
   minSpeechDuration = 0.3,
   maxSpeechDuration = 30,
   onSpeechStart,

@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { GoogleCloudServices } from "@/lib/google-services"
 import { debugLog } from "@/lib/debug"
+import { mapRecognitionConfig } from "@/lib/stt-utils"
 
 interface ProcessConversationRequest {
   audioFile?: File
@@ -33,7 +34,29 @@ export async function POST(request: NextRequest) {
     // Process audio if provided
     if (audioFile) {
       const audioBuffer = Buffer.from(await audioFile.arrayBuffer())
-      userMessage = await googleServices.speechToText(audioBuffer)
+      const mime = (audioFile.type || "").toLowerCase()
+      const recCfg = mapRecognitionConfig(mime)
+      if (audioBuffer.length < 10_000) {
+        debugLog("API Conversation", "audio_too_small", {
+          bytes: audioBuffer.length,
+          mime,
+        })
+        return NextResponse.json({ error: "Audio too small" }, { status: 400 })
+      }
+      if (!recCfg) {
+        debugLog("API Conversation", "unsupported_mime", { mime })
+        return NextResponse.json({ error: "Unsupported audio format" }, { status: 415 })
+      }
+      debugLog("API Conversation", "stt_start", {
+        bytes: audioBuffer.length,
+        mime,
+        encoding: recCfg.encoding,
+        sampleRate: recCfg.sampleRateHertz,
+        endpoint: recCfg.useBeta ? "v1p1beta1" : "v1",
+      })
+      const { useBeta, ...sttOverrides } = recCfg as any
+      userMessage = await googleServices.speechToText(audioBuffer, sttOverrides)
+      debugLog("API Conversation", "stt_result", { text: userMessage })
 
       if (!userMessage.trim()) {
         return NextResponse.json({ error: "No speech detected" }, { status: 400 })
@@ -54,7 +77,9 @@ export async function POST(request: NextRequest) {
     debugLog("API Conversation", "ai_response", { length: aiResponse.length })
 
     // Generate TTS audio for AI response
+    debugLog("API Conversation", "tts_start")
     const audioBuffer = await googleServices.textToSpeech(aiResponse)
+    debugLog("API Conversation", "tts_result", { bytes: audioBuffer.length })
     const audioBase64 = audioBuffer.toString("base64")
 
     // Analyze conversation state
@@ -80,6 +105,7 @@ export async function POST(request: NextRequest) {
       },
     })
   } catch (error) {
+    debugLog("API Conversation", "error", { error: String(error) })
     return NextResponse.json({ error: `Conversation processing failed: ${error}` }, { status: 500 })
   }
 }

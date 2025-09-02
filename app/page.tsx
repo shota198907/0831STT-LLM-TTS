@@ -12,6 +12,9 @@ import { VADMonitor } from "@/components/vad-monitor"
 import { APIClient } from "@/lib/api-client"
 import { debugLog } from "@/lib/debug"
 
+// ページ読み込み時にモジュールが評価されたことをログに残す
+debugLog("AI Phone", "Page module loaded")
+
 interface ChatMessage {
   id: string
   type: "user" | "ai"
@@ -32,6 +35,13 @@ export default function AIPhoneSystem() {
     (message: string, data?: any) => debugLog("AI Phone", message, data),
     [],
   )
+
+  useEffect(() => {
+    log("Component mounted")
+    return () => {
+      log("Component unmounted")
+    }
+  }, [log])
 
   const addMessage = useCallback(
     (type: "user" | "ai", content: string) => {
@@ -96,12 +106,13 @@ export default function AIPhoneSystem() {
     processUserMessage,
     processAIResponse,
     resetConversation,
+    clearAllTimeouts,
   } = useConversationFlow({
     onStateChange: handleConversationStateChange,
     onMessageAdd: addMessage,
     onCallEnd: handleCallEnd,
-    silenceTimeoutDuration: 6000,
-    maxSilenceBeforeEnd: 6000,
+    silenceTimeoutDuration: 5000,
+    maxSilenceBeforeEnd: 10000,
   })
 
   const handleAudioData = useCallback(
@@ -111,9 +122,21 @@ export default function AIPhoneSystem() {
         log("eou_sent")
         setCallState("processing")
 
+        log("Sending audio for STT and AI processing")
         const apiClient = APIClient.getInstance()
-        const result = await apiClient.processConversation(audioBlob, conversationMessages)
+        const result = await apiClient.processConversation(
+          audioBlob,
+          conversationMessages,
+        )
         log("ack_received")
+        log("stt_text", result.userMessage)
+        log("ai_text", result.aiResponse)
+        log("tts_audio", { present: !!result.audioBase64 })
+        log("conversation_result", {
+          user: result.userMessage,
+          ai: result.aiResponse,
+          hasAudio: !!result.audioBase64,
+        })
 
         // Process user message through conversation flow
         const userResult = processUserMessage(result.userMessage)
@@ -208,8 +231,8 @@ export default function AIPhoneSystem() {
   const handleSpeechStart = useCallback(() => {
     log("Speech started")
     setCallState("user-speaking")
-    stopListening() // Stop silence timeout while user is speaking
-  }, [log, stopListening])
+    clearAllTimeouts() // ユーザー発話中は沈黙タイマーのみ停止
+  }, [log, clearAllTimeouts])
 
   const handleSpeechEnd = useCallback(async () => {
     log("Speech ended")
@@ -222,13 +245,15 @@ export default function AIPhoneSystem() {
   }, [log, stopRecording])
 
   const handleMaxDurationReached = useCallback(async () => {
-    log("Maximum speech duration reached - forcing end")
+    log("Maximum speech duration reached - forcing stop")
     await stopRecording()
+    log("Recording stopped due to max duration")
   }, [stopRecording, log])
 
   // DEBUG: thresholds can be overridden via env vars for verification
   const vadSilenceThreshold = Number(process.env.NEXT_PUBLIC_VAD_SILENCE_THRESHOLD ?? 1.2)
-  const vadVolumeThreshold = Number(process.env.NEXT_PUBLIC_VAD_VOLUME_THRESHOLD ?? 0.01)
+  const vadVolumeThreshold = Number(process.env.NEXT_PUBLIC_VAD_VOLUME_THRESHOLD ?? 0.03)
+  log("VAD thresholds", { silence: vadSilenceThreshold, volume: vadVolumeThreshold })
 
   const { startVAD, stopVAD, vadMetrics } = useVoiceActivityDetection({
     silenceThreshold: vadSilenceThreshold,
@@ -347,16 +372,27 @@ export default function AIPhoneSystem() {
     (reason: CallEndReason | "user" | "error") => {
       log(`Ending call... reason=${reason}`)
 
-      stopVAD()
-      cleanup()
-      resetConversation()
+      const finalize = () => {
+        stopVAD()
+        cleanup()
+        resetConversation()
+        setCallState("idle")
+        setMessages([])
+        log("Call ended")
+      }
 
-      setCallState("idle")
-      setMessages([])
-
-      log("Call ended")
+      log("Stopping recording before ending call")
+      stopRecording()
+        .then(() => {
+          log("Recording stopped prior to cleanup")
+          finalize()
+        })
+        .catch((err) => {
+          log("Failed to stop recording before end", err)
+          finalize()
+        })
     },
-    [stopVAD, cleanup, resetConversation, log],
+    [stopRecording, stopVAD, cleanup, resetConversation, log],
   )
   endCallRef.current = endCall
 

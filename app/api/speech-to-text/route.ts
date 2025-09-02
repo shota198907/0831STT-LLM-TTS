@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { GoogleCloudServices } from "@/lib/google-services"
 import { debugLog } from "@/lib/debug"
+import { mapRecognitionConfig } from "@/lib/stt-utils"
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,22 +14,24 @@ export async function POST(request: NextRequest) {
 
     const audioBuffer = Buffer.from(await audioFile.arrayBuffer())
 
-    // ← ここで MIME からエンコーディングを判定
     const mime = (audioFile.type || "").toLowerCase()
-    debugLog("API STT", "received", { mime })
-    let overrides: any = {}
-    if (mime.includes("webm")) {
-      overrides = { encoding: "WEBM_OPUS" }
-    } else if (mime.includes("ogg") || mime.includes("opus")) {
-      overrides = { encoding: "OGG_OPUS" }
-    } else if (mime.includes("wav") || mime.includes("x-wav") || mime.includes("wave")) {
-      overrides = { encoding: "LINEAR16", sampleRateHertz: 16000 }
-    } else {
-      // 不明なら自動判定に委ねる
-      overrides = { encoding: "ENCODING_UNSPECIFIED" }
+    const recCfg = mapRecognitionConfig(mime)
+    debugLog("API STT", "received", { mime, bytes: audioBuffer.length })
+
+    if (audioBuffer.length < 10_000) {
+      debugLog("API STT", "audio_too_small", { bytes: audioBuffer.length, mime })
+      return NextResponse.json({ error: "Audio too small" }, { status: 400 })
     }
 
+    if (!recCfg) {
+      debugLog("API STT", "unsupported_mime", { mime })
+      return NextResponse.json({ error: "Unsupported audio format" }, { status: 415 })
+    }
+
+    const { useBeta, ...overrides } = recCfg as any
+
     const googleServices = GoogleCloudServices.getInstance()
+    debugLog("API STT", "stt_start")
     const transcription = await googleServices.speechToText(audioBuffer, overrides)
     debugLog("API STT", "transcribed", { transcription })
 
@@ -41,6 +44,7 @@ export async function POST(request: NextRequest) {
       timestamp: new Date().toISOString(),
     })
   } catch (error) {
+    debugLog("API STT", "error", { error: String(error) })
     return NextResponse.json({ error: `Speech-to-text processing failed: ${error}` }, { status: 500 })
   }
 }
