@@ -331,9 +331,11 @@ export function useConversationFlow({
   const startListening = useCallback(() => {
     log("startListening")
     changeState("listening")
+　  codex/add-logging-to-track-processing-flow-dk42gt
     clearAllTimeouts()
     startSilenceTimeout()
   }, [changeState, startSilenceTimeout, clearAllTimeouts, log])
+
 
   const stopListening = useCallback(() => {
     log("stopListening")

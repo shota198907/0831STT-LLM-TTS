@@ -129,9 +129,11 @@ export default function AIPhoneSystem() {
           conversationMessages,
         )
         log("ack_received")
+       codex/add-logging-to-track-processing-flow-dk42gt
         log("stt_text", result.userMessage)
         log("ai_text", result.aiResponse)
         log("tts_audio", { present: !!result.audioBase64 })
+         main
         log("conversation_result", {
           user: result.userMessage,
           ai: result.aiResponse,
