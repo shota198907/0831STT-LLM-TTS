@@ -17,6 +17,7 @@ export function useWebRTCAudio({ onAudioData, onError }: WebRTCAudioOptions) {
   const isStartingRef = useRef(false)
   const isStoppingRef = useRef(false)
   const stopPromiseRef = useRef<Promise<void> | null>(null)
+  const recordStartRef = useRef<number | null>(null)
 
 
   const initializeAudio = useCallback(async (): Promise<{ stream: MediaStream; audioContext: AudioContext }> => {
@@ -32,7 +33,7 @@ export function useWebRTCAudio({ onAudioData, onError }: WebRTCAudioOptions) {
           channelCount: 1,
         },
       })
-      console.log("[CHECK] stream settings", stream.getAudioTracks()[0]?.getSettings())
+      debugLog("WebRTC", "stream_settings", stream.getAudioTracks()[0]?.getSettings())
 
 
       const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({
@@ -47,6 +48,10 @@ export function useWebRTCAudio({ onAudioData, onError }: WebRTCAudioOptions) {
       audioContextRef.current = audioContext
 
       debugLog("WebRTC", "Audio initialized", {
+        sampleRate: audioContext.sampleRate,
+      })
+      debugLog("AudioCtx", "state", {
+        state: audioContext.state,
         sampleRate: audioContext.sampleRate,
       })
 
@@ -92,6 +97,7 @@ export function useWebRTCAudio({ onAudioData, onError }: WebRTCAudioOptions) {
       mediaRecorderRef.current = mediaRecorder
       mediaRecorder.start(1000) // 収集間隔を1秒に変更
       setIsRecording(true)
+      recordStartRef.current = performance.now()
 
       debugLog("WebRTC", "Recording started")
 
@@ -138,11 +144,15 @@ export function useWebRTCAudio({ onAudioData, onError }: WebRTCAudioOptions) {
           const audioBlob = new Blob(audioChunksRef.current, {
             type: recorder.mimeType || "audio/webm;codecs=opus",
           })
-          debugLog("WebRTC", "recording_blob", {
-            mime: recorder.mimeType,
-            blobType: audioBlob.type,
+          const durationMs = recordStartRef.current
+            ? performance.now() - recordStartRef.current
+            : 0
+          debugLog("Recording", "result", {
+            mime: audioBlob.type,
             size: audioBlob.size,
+            duration_ms: Math.round(durationMs),
           })
+          recordStartRef.current = null
           await onAudioData(audioBlob)
           const end = performance.now()
           debugLog("WebRTC", "Flushed last chunk", {

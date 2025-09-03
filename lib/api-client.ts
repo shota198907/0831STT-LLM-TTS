@@ -21,10 +21,25 @@ export class APIClient {
       formData.append("audio", audioBlob, "audio.webm")
       formData.append("conversationHistory", JSON.stringify(conversationHistory))
 
-      debugLog("APIClient", "processConversation_send")
+      const corrId = crypto.randomUUID()
+      const audioField = formData.get("audio") as File | null
+      debugLog("SEND", "conversation", {
+        corr_id: corrId,
+        hasAudio: !!audioField,
+        type: audioField?.type,
+        size: audioField?.size,
+        name: audioField?.name,
+      })
       const response = await fetch(`${this.baseUrl}/api/conversation`, {
         method: "POST",
         body: formData,
+        headers: { "X-Correlation-ID": corrId },
+      })
+
+      debugLog("NET", "conversation", {
+        corr_id: corrId,
+        url: `${this.baseUrl}/api/conversation`,
+        status: response.status,
       })
 
       if (!response.ok) {
@@ -45,10 +60,25 @@ export class APIClient {
       const formData = new FormData()
       formData.append("audio", audioBlob, "audio.webm")
 
-      debugLog("APIClient", "stt_send")
+      const corrId = crypto.randomUUID()
+      const audioField = formData.get("audio") as File | null
+      debugLog("SEND", "stt", {
+        corr_id: corrId,
+        hasAudio: !!audioField,
+        type: audioField?.type,
+        size: audioField?.size,
+        name: audioField?.name,
+      })
       const response = await fetch(`${this.baseUrl}/api/speech-to-text`, {
         method: "POST",
         body: formData,
+        headers: { "X-Correlation-ID": corrId },
+      })
+
+      debugLog("NET", "stt", {
+        corr_id: corrId,
+        url: `${this.baseUrl}/api/speech-to-text`,
+        status: response.status,
       })
 
       if (!response.ok) {
@@ -66,13 +96,21 @@ export class APIClient {
 
   async textToSpeech(text: string) {
     try {
-      debugLog("APIClient", "tts_send")
+      const corrId = crypto.randomUUID()
+      debugLog("SEND", "tts", { corr_id: corrId, text_len: text.length })
       const response = await fetch(`${this.baseUrl}/api/text-to-speech`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "X-Correlation-ID": corrId,
         },
         body: JSON.stringify({ text }),
+      })
+
+      debugLog("NET", "tts", {
+        corr_id: corrId,
+        url: `${this.baseUrl}/api/text-to-speech`,
+        status: response.status,
       })
 
       if (!response.ok) {
@@ -90,13 +128,21 @@ export class APIClient {
 
   async generateAIResponse(message: string, conversationHistory: any[] = []) {
     try {
-      debugLog("APIClient", "ai_chat_send")
+      const corrId = crypto.randomUUID()
+      debugLog("SEND", "ai_chat", { corr_id: corrId, text_len: message.length })
       const response = await fetch(`${this.baseUrl}/api/ai-chat`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "X-Correlation-ID": corrId,
         },
         body: JSON.stringify({ message, conversationHistory }),
+      })
+
+      debugLog("NET", "ai_chat", {
+        corr_id: corrId,
+        url: `${this.baseUrl}/api/ai-chat`,
+        status: response.status,
       })
 
       if (!response.ok) {

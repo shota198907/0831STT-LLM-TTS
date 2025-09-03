@@ -23,7 +23,7 @@ interface VADMetrics {
 }
 
 export function useVoiceActivityDetection({
-  silenceThreshold = 0.8,
+  silenceThreshold = 1.0,
   volumeThreshold = 0.03,
   minSpeechDuration = 0.3,
   maxSpeechDuration = 30,
@@ -42,6 +42,7 @@ export function useVoiceActivityDetection({
   const volumeHistoryRef = useRef<number[]>([])
   const lastVolumeCheckRef = useRef<number>(0)
   const isVADRunningRef = useRef(false)
+  const lastMetricsLogRef = useRef<number>(0)
 
   const [vadMetrics, setVadMetrics] = useState<VADMetrics>({
     currentVolume: 0,
@@ -65,15 +66,14 @@ export function useVoiceActivityDetection({
     const rms = Math.sqrt(
       dataArrayRef.current.reduce((acc, value) => acc + (value / 255) ** 2, 0) / dataArrayRef.current.length,
     )
+    const peak =
+      dataArrayRef.current.reduce((m, v) => (v > m ? v : m), 0) / 255
 
     // Maintain volume history for adaptive thresholding
     volumeHistoryRef.current.push(normalizedVolume)
     if (volumeHistoryRef.current.length > 100) {
       volumeHistoryRef.current.shift()
     }
-
-    // ★ デバッグログ追加
-    console.log("[CHECK] analyzeAudio", { normalizedVolume, rms, average })
 
     // Calculate adaptive threshold based on background noise
     const averageVolume =
@@ -82,6 +82,16 @@ export function useVoiceActivityDetection({
 
     const currentTime = Date.now()
     const isSpeaking = rms > adaptiveThreshold
+
+    if (currentTime - lastMetricsLogRef.current > 500) {
+      debugLog("VAD metrics", "tick", {
+        rms: Number(rms.toFixed(3)),
+        peak: Number(peak.toFixed(3)),
+        isSpeaking,
+        ts: currentTime,
+      })
+      lastMetricsLogRef.current = currentTime
+    }
 
     setVadMetrics((prev) => ({
       ...prev,
@@ -153,23 +163,23 @@ export function useVoiceActivityDetection({
     (stream: MediaStream, audioContext: AudioContext) => {
       if (isVADRunningRef.current) return
       try {
-        debugLog("CHECK", "startVAD called", {
-          hasStream: !!stream,
-          trackSettings: stream.getAudioTracks()[0]?.getSettings(),
-          sampleRate: audioContext.sampleRate,
+        debugLog("VAD probe", "start", {
+          streamId: stream.id,
+          nodePath: "media->analyser",
+          threshold: volumeThreshold,
         })
         const source = audioContext.createMediaStreamSource(stream)
         const analyser = audioContext.createAnalyser()
 
-        analyser.fftSize = 512
-        analyser.smoothingTimeConstant = 0.3
+        analyser.fftSize = 1024
+        analyser.smoothingTimeConstant = 0.2
         analyser.minDecibels = -90
         analyser.maxDecibels = -10
 
         source.connect(analyser)
 
         analyserRef.current = analyser
-        dataArrayRef.current = new Uint8Array(analyser.frequencyBinCount)
+        dataArrayRef.current = new Uint8Array(analyser.fftSize)
 
         // Reset state
         volumeHistoryRef.current = []
@@ -183,7 +193,7 @@ export function useVoiceActivityDetection({
         debugLog("VAD", "error_startVAD", { error })
       }
     },
-    [analyzeAudio],
+    [analyzeAudio, volumeThreshold],
   )
 
   const stopVAD = useCallback(() => {

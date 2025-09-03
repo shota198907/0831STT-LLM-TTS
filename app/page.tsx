@@ -354,6 +354,7 @@ export default function AIPhoneSystem() {
       const { stream: audioStream, audioContext: context } = await initializeAudio()
       log("Audio initialized successfully", { sampleRate: context?.sampleRate })
 
+      
       // 先に再生解錠（これが無いとウェルカム音声がブロックされることがある）
       await unlockPlayback(context)
 

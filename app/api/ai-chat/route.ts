@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { GoogleCloudServices } from "@/lib/google-services"
 import { debugLog } from "@/lib/debug"
+import { randomUUID } from "crypto"
 
 interface ConversationMessage {
   role: "user" | "assistant"
@@ -9,9 +10,10 @@ interface ConversationMessage {
 }
 
 export async function POST(request: NextRequest) {
+  const corrId = request.headers.get("x-correlation-id") || randomUUID()
   try {
     const { message, conversationHistory = [] } = await request.json()
-    debugLog("API AI-Chat", "message", { message })
+    debugLog("Ingress", "ai_chat", { corr_id: corrId, text_len: message?.length || 0 })
 
     if (!message || typeof message !== "string") {
       return NextResponse.json({ error: "Valid message is required" }, { status: 400 })
@@ -26,7 +28,7 @@ export async function POST(request: NextRequest) {
     // Generate AI response
     const googleServices = GoogleCloudServices.getInstance()
     const aiResponse = await googleServices.generateResponse(message, formattedHistory)
-    debugLog("API AI-Chat", "ai_response", { length: aiResponse.length })
+    debugLog("API AI-Chat", "ai_response", { corr_id: corrId, length: aiResponse.length })
 
     // Check for conversation ending conditions
     const isEndingConversation =

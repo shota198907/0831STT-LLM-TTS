@@ -59,27 +59,62 @@ export class GoogleCloudServices {
       encoding: SttEncoding
       sampleRateHertz: number
       languageCode: string
-    }> = {}
-  ): Promise<string> {
+    }> = {},
+    corrId?: string,
+  ): Promise<{ text: string; languageCode?: string; confidence?: number }> {
     if (!this.speechClient) {
       throw new Error("Speech client not initialized")
     }
 
+    const sttStart = Date.now()
     try {
+      const config = this.getSpeechToTextConfig(configOverrides)
       const request = {
         audio: {
           content: audioBuffer.toString("base64"),
         },
-        config: this.getSpeechToTextConfig(configOverrides),
+        config,
       }
-
-      debugLog("GoogleServices", "speechToText_request")
+      debugLog("STT OUT", "gcp", {
+        corr_id: corrId,
+        provider: "gcp",
+        model: config.model,
+        reqBytes: audioBuffer.length,
+        encoding: config.encoding,
+        sr: config.sampleRateHertz,
+      })
       const [response] = await this.speechClient.recognize(request)
-      const transcription =
-        response.results?.map((r) => r.alternatives?.[0]?.transcript).join("\n") || ""
-      debugLog("GoogleServices", "speechToText_result", { transcription })
-      return transcription
+      const sttEnd = Date.now()
+      debugLog("STT IN", "gcp", {
+        corr_id: corrId,
+        status: "ok",
+        provider_error: null,
+        latency_ms_resp: sttEnd - sttStart,
+      })
+
+      const alternative = response.results?.[0]?.alternatives?.[0]
+      const languageCode = response.results?.[0]?.languageCode
+      const transcription = alternative?.transcript || ""
+      const confidence = alternative?.confidence
+      debugLog("Transcription", "gcp", {
+        corr_id: corrId,
+        text_len: transcription.length,
+        lang: languageCode,
+        confidence,
+      })
+      return { 
+        text: transcription, 
+        languageCode: languageCode || undefined, 
+        confidence: confidence || undefined 
+      }
     } catch (error) {
+      const sttEnd = Date.now()
+      debugLog("STT IN", "gcp", {
+        corr_id: corrId,
+        status: "error",
+        provider_error: String(error),
+        latency_ms_resp: sttEnd - sttStart,
+      })
       throw new Error(`Speech-to-text failed: ${error}`)
     }
   }
@@ -119,7 +154,7 @@ export class GoogleCloudServices {
   }
 
   // ===== Text-to-Speech =====
-  public async textToSpeech(text: string): Promise<Buffer> {
+  public async textToSpeech(text: string, corrId?: string): Promise<Buffer> {
     if (!this.ttsClient) {
       throw new Error("TTS client not initialized")
     }
@@ -130,7 +165,7 @@ export class GoogleCloudServices {
         ...this.getTextToSpeechConfig(),
       }
 
-      debugLog("GoogleServices", "textToSpeech_request", { text })
+      debugLog("GoogleServices", "textToSpeech_request", { corr_id: corrId, text })
       const [response] = await this.ttsClient.synthesizeSpeech(request)
 
       if (!response.audioContent) {
@@ -138,7 +173,7 @@ export class GoogleCloudServices {
       }
 
       const audioBuffer = Buffer.from(response.audioContent as Uint8Array)
-      debugLog("GoogleServices", "textToSpeech_result", { bytes: audioBuffer.length })
+      debugLog("GoogleServices", "textToSpeech_result", { corr_id: corrId, bytes: audioBuffer.length })
 
       return audioBuffer
     } catch (error) {
