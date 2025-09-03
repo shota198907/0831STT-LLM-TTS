@@ -12,10 +12,10 @@ interface VADOptions {
   silenceThreshold: number // in seconds
   volumeThreshold: number // 0-1 scale
   minSpeechDuration: number // minimum speech duration in seconds
+  minSilenceDuration: number // ignore silences shorter than this (seconds)
   maxSpeechDuration: number // maximum speech duration in seconds
   onSpeechStart: () => void
   onSpeechEnd: () => void
-  onSilenceDetected: () => void
   onMaxDurationReached: () => void
   lastRmsRef?: MutableRefObject<number>
 }
@@ -32,20 +32,21 @@ export function useVoiceActivityDetection({
   silenceThreshold = 1.0,
   volumeThreshold = 0.03,
   minSpeechDuration = 0.3,
+  minSilenceDuration = 0.3,
   maxSpeechDuration = 30,
   onSpeechStart,
   onSpeechEnd,
-  onSilenceDetected,
   onMaxDurationReached,
   lastRmsRef: externalLastRmsRef,
 }: VADOptions) {
   const analyserRef = useRef<AnalyserNode | null>(null)
   const dataArrayRef = useRef<Float32Array>(new Float32Array())
-  const silenceTimerRef = useRef<NodeJS.Timeout | null>(null)
-  const maxDurationTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const maxDurationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const isSpeakingRef = useRef(false)
   const animationFrameRef = useRef<number | null>(null)
   const speechStartTimeRef = useRef<number | null>(null)
+  const silenceStartTimeRef = useRef<number | null>(null)
   const volumeHistoryRef = useRef<number[]>([])
   const lastVolumeCheckRef = useRef<number>(0)
   const lastMetricsLogRef = useRef<number>(0)
@@ -126,6 +127,7 @@ export function useVoiceActivityDetection({
     if (isSpeaking && !isSpeakingRef.current) {
       // Speech started
       speechStartTimeRef.current = currentTime
+      silenceStartTimeRef.current = null
 
       // Clear silence timer
       if (silenceTimerRef.current) {
@@ -148,22 +150,28 @@ export function useVoiceActivityDetection({
         clearTimeout(silenceTimerRef.current)
       }
 
+      silenceStartTimeRef.current = silenceStartTimeRef.current ?? currentTime
+
       silenceTimerRef.current = setTimeout(() => {
         const speechDuration = speechStartTimeRef.current ? (Date.now() - speechStartTimeRef.current) / 1000 : 0
+        const silenceDuration = silenceStartTimeRef.current ? (Date.now() - silenceStartTimeRef.current) / 1000 : 0
 
-        // Only trigger speech end if minimum duration was met
-        if (speechDuration >= minSpeechDuration) {
+        // Only trigger speech end if minimum durations were met and volume stayed low
+        if (
+          speechDuration >= minSpeechDuration &&
+          silenceDuration >= minSilenceDuration &&
+          lastRmsRef.current < volumeThreshold
+        ) {
           isSpeakingRef.current = false
+          silenceStartTimeRef.current = null
           debugLog("VAD", "speech_end", { callId: currentCallIdRef.current, duration: speechDuration })
           onSpeechEnd()
-          debugLog("VAD", "silence_detected", { callId: currentCallIdRef.current })
-          onSilenceDetected()
           if (maxDurationTimerRef.current) {
             clearTimeout(maxDurationTimerRef.current)
             maxDurationTimerRef.current = null
           }
         }
-      }, silenceThreshold * 1000)
+      }, Math.max(silenceThreshold, minSilenceDuration) * 1000)
     }
 
     lastVolumeCheckRef.current = currentTime
@@ -172,10 +180,10 @@ export function useVoiceActivityDetection({
     volumeThreshold,
     silenceThreshold,
     minSpeechDuration,
+    minSilenceDuration,
     maxSpeechDuration,
     onSpeechStart,
     onSpeechEnd,
-    onSilenceDetected,
     onMaxDurationReached,
   ])
 
@@ -263,6 +271,7 @@ export function useVoiceActivityDetection({
     dataArrayRef.current = new Float32Array()
     isSpeakingRef.current = false
     speechStartTimeRef.current = null
+    silenceStartTimeRef.current = null
     volumeHistoryRef.current = []
 
     setVadMetrics({

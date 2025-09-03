@@ -73,8 +73,8 @@ export function useConversationFlow({
     [],
   )
 
-  const silenceTimeoutRef = useRef<NodeJS.Timeout | null>(null)
-  const connectionCheckTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const silenceCheckTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const endCallTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const addMessage = useCallback(
     (type: "user" | "ai", content: string) => {
@@ -179,14 +179,16 @@ export function useConversationFlow({
   const startSilenceTimeout = useCallback(() => {
     log("startSilenceTimeout")
 
-    if (silenceTimeoutRef.current) {
-      clearTimeout(silenceTimeoutRef.current)
+    if (silenceCheckTimeoutRef.current) {
+      clearTimeout(silenceCheckTimeoutRef.current)
+    }
+    if (endCallTimeoutRef.current) {
+      clearTimeout(endCallTimeoutRef.current)
     }
 
     // If we're waiting for end confirmation, end the conversation after 8s of silence
     if (context.isAwaitingEndConfirmation) {
-      silenceTimeoutRef.current = setTimeout(() => {
-
+      silenceCheckTimeoutRef.current = setTimeout(() => {
         const endMessage =
           "お問い合わせありがとうございました。また何かございましたらいつでもご連絡ください。失礼いたします。"
         addMessage("ai", endMessage)
@@ -201,8 +203,7 @@ export function useConversationFlow({
       return
     }
 
-    silenceTimeoutRef.current = setTimeout(() => {
-
+    silenceCheckTimeoutRef.current = setTimeout(() => {
       setContext((prev) => ({
         ...prev,
         connectionCheckCount: prev.connectionCheckCount + 1,
@@ -211,22 +212,20 @@ export function useConversationFlow({
       const checkMessage = "お声届いていますでしょうか？"
       addMessage("ai", checkMessage)
       changeState("checking-connection", "silence_timeout", { remainingSilenceMs: 0 })
-
-      // Start final timeout for disconnection
-      connectionCheckTimeoutRef.current = setTimeout(() => {
-
-        const endMessage =
-          "通信が途絶えているようです。一度通信を終了いたします。何かご不明点あれば、またご連絡ください。お電話ありがとうございました。"
-        addMessage("ai", endMessage)
-        changeState("ending", "no_response")
-
-        // End call after message
-        setTimeout(() => {
-          changeState("ended", "no_response_final")
-          onCallEnd("no-response")
-        }, 3000)
-      }, maxSilenceBeforeEnd)
     }, silenceTimeoutDuration)
+
+    endCallTimeoutRef.current = setTimeout(() => {
+      const endMessage =
+        "通信が途絶えているようです。一度通信を終了いたします。何かご不明点あれば、またご連絡ください。お電話ありがとうございました。"
+      addMessage("ai", endMessage)
+      changeState("ending", "no_response")
+
+      // End call after message
+      setTimeout(() => {
+        changeState("ended", "no_response_final")
+        onCallEnd("no-response")
+      }, 3000)
+    }, silenceTimeoutDuration + maxSilenceBeforeEnd)
   }, [
     log,
     silenceTimeoutDuration,
@@ -239,13 +238,13 @@ export function useConversationFlow({
 
   const clearAllTimeouts = useCallback(() => {
     log("clearAllTimeouts")
-    if (silenceTimeoutRef.current) {
-      clearTimeout(silenceTimeoutRef.current)
-      silenceTimeoutRef.current = null
+    if (silenceCheckTimeoutRef.current) {
+      clearTimeout(silenceCheckTimeoutRef.current)
+      silenceCheckTimeoutRef.current = null
     }
-    if (connectionCheckTimeoutRef.current) {
-      clearTimeout(connectionCheckTimeoutRef.current)
-      connectionCheckTimeoutRef.current = null
+    if (endCallTimeoutRef.current) {
+      clearTimeout(endCallTimeoutRef.current)
+      endCallTimeoutRef.current = null
     }
   }, [log])
 
