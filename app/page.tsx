@@ -33,6 +33,7 @@ export default function AIPhoneSystem() {
   const [callState, setCallState] = useState<CallState>("idle")
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [showVADMonitor, setShowVADMonitor] = useState(false)
+  const [maxSpeechDuration, _setMaxSpeechDuration] = useState(30)
   const endCallRef = useRef<(reason: CallEndReason | "user" | "error") => void>(null)
   const ttsEndRef = useRef<number | null>(null)
   const lastRmsRef = useRef(0)
@@ -123,9 +124,17 @@ export default function AIPhoneSystem() {
     onStateChange: handleConversationStateChange,
     onMessageAdd: addMessage,
     onCallEnd: handleCallEnd,
-    silenceTimeoutDuration: 5000,
-    maxSilenceBeforeEnd: 10000,
+    silenceTimeoutDuration: 7000,
+    maxSilenceBeforeEnd: 3000,
   })
+
+  const speechEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const clearSpeechEndTimer = useCallback(() => {
+    if (speechEndTimerRef.current) {
+      clearTimeout(speechEndTimerRef.current)
+      speechEndTimerRef.current = null
+    }
+  }, [])
 
   const handleAudioData = useCallback(
     async (audioBlob: Blob) => {
@@ -212,9 +221,8 @@ export default function AIPhoneSystem() {
     (error: Error) => {
       log("Audio error:", error)
       alert(`音声エラー: ${error.message}`)
-      endCall("error")
+      endCallRef.current?.("error")
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [log],
   )
 
@@ -223,6 +231,18 @@ export default function AIPhoneSystem() {
       onAudioData: handleAudioData,
       onError: handleAudioError,
     },
+  )
+
+  const stopVADRef = useRef<(reason?: string) => void>(() => {})
+
+  const stopRecordingAndVAD = useCallback(
+    async (reason: string = "manual") => {
+      clearSpeechEndTimer()
+      stopListening()
+      await stopRecording()
+      stopVADRef.current(reason)
+    },
+    [stopRecording, stopListening, clearSpeechEndTimer],
   )
 
   const ensureAudioContextRunning = useCallback(
@@ -244,23 +264,22 @@ export default function AIPhoneSystem() {
     log("Speech started")
     setCallState("user-speaking")
     clearAllTimeouts() // ユーザー発話中は沈黙タイマーのみ停止
-  }, [log, clearAllTimeouts])
+    clearSpeechEndTimer()
+  }, [log, clearAllTimeouts, clearSpeechEndTimer])
 
-  const handleSpeechEnd = useCallback(async () => {
+  const handleSpeechEnd = useCallback(() => {
     log("Speech ended")
-    await stopRecording()
-  }, [stopRecording, log])
-
-  const handleSilenceDetected = useCallback(async () => {
-    log("Silence detected - user finished speaking")
-    await stopRecording()
-  }, [log, stopRecording])
+    clearSpeechEndTimer()
+    speechEndTimerRef.current = setTimeout(() => {
+      void stopRecordingAndVAD("speech_end")
+    }, 800)
+  }, [stopRecordingAndVAD, log, clearSpeechEndTimer])
 
   const handleMaxDurationReached = useCallback(async () => {
     log("Maximum speech duration reached - forcing stop")
-    await stopRecording()
+    await stopRecordingAndVAD("max_duration")
     log("Recording stopped due to max duration")
-  }, [stopRecording, log])
+  }, [stopRecordingAndVAD, log])
 
   // DEBUG: thresholds can be overridden via env vars for verification
 const vadSilenceThreshold = Number(process.env.NEXT_PUBLIC_VAD_SILENCE_THRESHOLD ?? 1.2)
@@ -274,12 +293,15 @@ log(
     silenceThreshold: vadSilenceThreshold,
     volumeThreshold: vadVolumeThreshold,
     minSpeechDuration: 0.3,
-    maxSpeechDuration: 10,
+    maxSpeechDuration,
     onSpeechStart: handleSpeechStart,
     onSpeechEnd: handleSpeechEnd,
-    onSilenceDetected: handleSilenceDetected,
     onMaxDurationReached: handleMaxDurationReached,
   })
+
+  useEffect(() => {
+    stopVADRef.current = stopVAD
+  }, [stopVAD])
 
   // 再生解錠（無音オシレータで 0.1秒だけ音を出し、自動再生ブロックを解除）
   const unlockPlayback = useCallback(async (ctx?: AudioContext) => {
@@ -366,7 +388,7 @@ log(
       log("Starting call...")
       setCallState("connecting")
 
-      const { stream: audioStream, audioContext: context } = await initializeAudio()
+      const { audioContext: context } = await initializeAudio()
       log("Audio initialized successfully", { sampleRate: context?.sampleRate })
 
       
@@ -388,7 +410,8 @@ log(
       log(`Ending call... reason=${reason}`)
 
       const finalize = () => {
-        stopVAD("end_call")
+        clearSpeechEndTimer()
+        clearAllTimeouts()
         cleanup()
         resetConversation()
         setCallState("idle")
@@ -398,7 +421,7 @@ log(
 
       if (isRecording) {
         log("Stopping recording before ending call")
-        stopRecording()
+        stopRecordingAndVAD("end_call")
           .then(() => {
             log("Recording stopped prior to cleanup")
             finalize()
@@ -408,19 +431,19 @@ log(
             finalize()
           })
       } else {
+        stopVADRef.current("end_call")
         finalize()
       }
     },
-    [isRecording, stopRecording, stopVAD, cleanup, resetConversation, log],
+    [isRecording, stopRecordingAndVAD, cleanup, resetConversation, log, clearSpeechEndTimer, clearAllTimeouts],
   )
   endCallRef.current = endCall
 
   useEffect(() => {
     if (callState === "ai-speaking") {
-      stopVAD("ai_speaking")
-      void stopRecording()
+      void stopRecordingAndVAD("ai_speaking")
     }
-  }, [callState, stopVAD, stopRecording])
+  }, [callState, stopRecordingAndVAD])
 
   // Start listening when conversation flow indicates
   useEffect(() => {
@@ -575,15 +598,15 @@ if (currentContext.state === "running") {
   ])
 
   // Clean up only when component unmounts; avoid triggering endCall indirectly
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     return () => {
       log("Unmount cleanup: stopping audio only")
-      stopVAD("unmount")
+      stopVADRef.current("unmount")
       cleanup()
       resetConversation()
+      clearSpeechEndTimer()
     }
-  }, [])
+  }, [log, cleanup, resetConversation, clearSpeechEndTimer])
 
   const getStatusDisplay = () => {
     switch (callState) {
