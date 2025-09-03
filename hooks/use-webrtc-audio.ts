@@ -24,7 +24,6 @@ export function useWebRTCAudio({ onAudioData, onError }: WebRTCAudioOptions) {
     try {
 
       const stream = await navigator.mediaDevices.getUserMedia({
-        
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
@@ -33,7 +32,8 @@ export function useWebRTCAudio({ onAudioData, onError }: WebRTCAudioOptions) {
           channelCount: 1,
         },
       })
-      debugLog("WebRTC", "stream_settings", stream.getAudioTracks()[0]?.getSettings())
+      const trackSettings = stream.getAudioTracks()[0]?.getSettings()
+      debugLog("WebRTC", "stream_settings", trackSettings)
 
 
       const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({
@@ -53,6 +53,9 @@ export function useWebRTCAudio({ onAudioData, onError }: WebRTCAudioOptions) {
       debugLog("AudioCtx", "state", {
         state: audioContext.state,
         sampleRate: audioContext.sampleRate,
+      })
+      audioContext.addEventListener("statechange", () => {
+        debugLog("AudioCtx", "state_change", { state: audioContext.state })
       })
 
       return { stream, audioContext }
@@ -83,6 +86,15 @@ export function useWebRTCAudio({ onAudioData, onError }: WebRTCAudioOptions) {
       const mediaRecorder = new MediaRecorder(streamRef.current, {
         mimeType: "audio/webm;codecs=opus",
       })
+      debugLog("MR", "new", {
+        streamId: streamRef.current.id,
+        tracks: streamRef.current.getTracks().map((t) => ({
+          id: t.id,
+          muted: t.muted,
+          enabled: t.enabled,
+          readyState: t.readyState,
+        })),
+      })
 
       mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
@@ -99,7 +111,7 @@ export function useWebRTCAudio({ onAudioData, onError }: WebRTCAudioOptions) {
       setIsRecording(true)
       recordStartRef.current = performance.now()
 
-      debugLog("WebRTC", "Recording started")
+      debugLog("MR", "start")
 
     } catch (error) {
       onError(error as Error)
@@ -132,7 +144,7 @@ export function useWebRTCAudio({ onAudioData, onError }: WebRTCAudioOptions) {
     return
   }
 
-  debugLog("WebRTC", "stopRecording invoked")
+  debugLog("MR", "stop_invoked")
 
     isStoppingRef.current = true
     const recorder = mediaRecorderRef.current
@@ -147,15 +159,17 @@ export function useWebRTCAudio({ onAudioData, onError }: WebRTCAudioOptions) {
           const durationMs = recordStartRef.current
             ? performance.now() - recordStartRef.current
             : 0
-          debugLog("Recording", "result", {
-            mime: audioBlob.type,
+          debugLog("MR", "chunk", {
             size: audioBlob.size,
+            type: audioBlob.type,
+          })
+          debugLog("MR", "stop", {
             duration_ms: Math.round(durationMs),
           })
           recordStartRef.current = null
           await onAudioData(audioBlob)
           const end = performance.now()
-          debugLog("WebRTC", "Flushed last chunk", {
+          debugLog("MR", "flush_last_chunk", {
             flush_last_chunk_ms: Math.round(end - start),
           })
           audioChunksRef.current = []

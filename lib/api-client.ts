@@ -23,12 +23,12 @@ export class APIClient {
 
       const corrId = crypto.randomUUID()
       const audioField = formData.get("audio") as File | null
-      debugLog("SEND", "conversation", {
-        corr_id: corrId,
+      debugLog("Net", "send", {
+        corrId,
+        target: "conversation",
         hasAudio: !!audioField,
-        type: audioField?.type,
+        mime: audioField?.type,
         size: audioField?.size,
-        name: audioField?.name,
       })
       const response = await fetch(`${this.baseUrl}/api/conversation`, {
         method: "POST",
@@ -36,8 +36,9 @@ export class APIClient {
         headers: { "X-Correlation-ID": corrId },
       })
 
-      debugLog("NET", "conversation", {
-        corr_id: corrId,
+      debugLog("Net", "response", {
+        corrId,
+        target: "conversation",
         url: `${this.baseUrl}/api/conversation`,
         status: response.status,
       })
@@ -62,12 +63,12 @@ export class APIClient {
 
       const corrId = crypto.randomUUID()
       const audioField = formData.get("audio") as File | null
-      debugLog("SEND", "stt", {
-        corr_id: corrId,
+      debugLog("Net", "send", {
+        corrId,
+        target: "stt",
         hasAudio: !!audioField,
-        type: audioField?.type,
+        mime: audioField?.type,
         size: audioField?.size,
-        name: audioField?.name,
       })
       const response = await fetch(`${this.baseUrl}/api/speech-to-text`, {
         method: "POST",
@@ -75,8 +76,9 @@ export class APIClient {
         headers: { "X-Correlation-ID": corrId },
       })
 
-      debugLog("NET", "stt", {
-        corr_id: corrId,
+      debugLog("Net", "response", {
+        corrId,
+        target: "stt",
         url: `${this.baseUrl}/api/speech-to-text`,
         status: response.status,
       })
@@ -97,7 +99,7 @@ export class APIClient {
   async textToSpeech(text: string) {
     try {
       const corrId = crypto.randomUUID()
-      debugLog("SEND", "tts", { corr_id: corrId, text_len: text.length })
+      debugLog("Net", "send", { corrId, target: "tts", text_len: text.length })
       const response = await fetch(`${this.baseUrl}/api/text-to-speech`, {
         method: "POST",
         headers: {
@@ -107,8 +109,9 @@ export class APIClient {
         body: JSON.stringify({ text }),
       })
 
-      debugLog("NET", "tts", {
-        corr_id: corrId,
+      debugLog("Net", "response", {
+        corrId,
+        target: "tts",
         url: `${this.baseUrl}/api/text-to-speech`,
         status: response.status,
       })
@@ -129,7 +132,11 @@ export class APIClient {
   async generateAIResponse(message: string, conversationHistory: any[] = []) {
     try {
       const corrId = crypto.randomUUID()
-      debugLog("SEND", "ai_chat", { corr_id: corrId, text_len: message.length })
+      debugLog("Net", "send", {
+        corrId,
+        target: "ai_chat",
+        text_len: message.length,
+      })
       const response = await fetch(`${this.baseUrl}/api/ai-chat`, {
         method: "POST",
         headers: {
@@ -139,8 +146,9 @@ export class APIClient {
         body: JSON.stringify({ message, conversationHistory }),
       })
 
-      debugLog("NET", "ai_chat", {
-        corr_id: corrId,
+      debugLog("Net", "response", {
+        corrId,
+        target: "ai_chat",
         url: `${this.baseUrl}/api/ai-chat`,
         status: response.status,
       })

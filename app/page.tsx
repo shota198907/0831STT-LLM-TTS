@@ -10,7 +10,12 @@ import { useConversationFlow, CallEndReason } from "@/hooks/use-conversation-flo
 import { AudioVisualizer } from "@/components/audio-visualizer"
 import { VADMonitor } from "@/components/vad-monitor"
 import { APIClient } from "@/lib/api-client"
-import { debugLog } from "@/lib/debug"
+import { debugLog, LogLevel } from "@/lib/debug"
+
+const genId = () =>
+  typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : Math.random().toString(36).slice(2, 10)
 
 // ページ読み込み時にモジュールが評価されたことをログに残す
 debugLog("AI Phone", "Page module loaded")
@@ -30,9 +35,13 @@ export default function AIPhoneSystem() {
   const [showVADMonitor, setShowVADMonitor] = useState(false)
   const endCallRef = useRef<(reason: CallEndReason | "user" | "error") => void>(null)
   const ttsEndRef = useRef<number | null>(null)
+  const lastRmsRef = useRef(0)
+  const audioEffectIdRef = useRef<string>(genId())
+  const callIdRef = useRef<string>("")
 
   const log = useCallback(
-    (message: string, data?: any) => debugLog("AI Phone", message, data),
+    (message: string, data?: any, level: LogLevel = "info") =>
+      debugLog("AI Phone", message, data, level),
     [],
   )
 
@@ -43,6 +52,9 @@ export default function AIPhoneSystem() {
     }
   }, [log])
 
+
+
+  
   const addMessage = useCallback(
     (type: "user" | "ai", content: string) => {
       const newMessage: ChatMessage = {
@@ -251,10 +263,13 @@ export default function AIPhoneSystem() {
   }, [stopRecording, log])
 
   // DEBUG: thresholds can be overridden via env vars for verification
-  const vadSilenceThreshold = Number(process.env.NEXT_PUBLIC_VAD_SILENCE_THRESHOLD ?? 1.2)
-  const vadVolumeThreshold = Number(process.env.NEXT_PUBLIC_VAD_VOLUME_THRESHOLD ?? 0.03)
-  log("VAD thresholds", { silence: vadSilenceThreshold, volume: vadVolumeThreshold })
-
+const vadSilenceThreshold = Number(process.env.NEXT_PUBLIC_VAD_SILENCE_THRESHOLD ?? 1.2)
+const vadVolumeThreshold = Number(process.env.NEXT_PUBLIC_VAD_VOLUME_THRESHOLD ?? 0.03)
+log(
+  "VAD thresholds",
+  { silence: vadSilenceThreshold, volume: vadVolumeThreshold },
+  "debug",
+)
   const { startVAD, stopVAD, vadMetrics } = useVoiceActivityDetection({
     silenceThreshold: vadSilenceThreshold,
     volumeThreshold: vadVolumeThreshold,
@@ -373,7 +388,7 @@ export default function AIPhoneSystem() {
       log(`Ending call... reason=${reason}`)
 
       const finalize = () => {
-        stopVAD()
+        stopVAD("end_call")
         cleanup()
         resetConversation()
         setCallState("idle")
@@ -402,7 +417,7 @@ export default function AIPhoneSystem() {
 
   useEffect(() => {
     if (callState === "ai-speaking") {
-      stopVAD()
+      stopVAD("ai_speaking")
       void stopRecording()
     }
   }, [callState, stopVAD, stopRecording])
@@ -428,17 +443,17 @@ export default function AIPhoneSystem() {
 
         await ensureAudioContextRunning(currentContext)
 
-        if (currentContext.state === "running") {
-          const recStart = performance.now()
-          log("Starting recording and VAD based on conversation state")
-          await startRecording()
-          log("Recording started", {
-            rec_start_ts: recStart,
-            latency_ms: Math.round(recStart - (ttsEndRef.current ?? recStart)),
-          })
-          ttsEndRef.current = null
-          startVAD(currentStream, currentContext)
-        } else {
+if (currentContext.state === "running") {
+  const recStart = performance.now()
+  log("Starting recording and VAD based on conversation state")
+  await startRecording()
+  log("Recording started", {
+    rec_start_ts: recStart,
+    latency_ms: Math.round(recStart - (ttsEndRef.current ?? recStart)),
+  })
+  ttsEndRef.current = null
+  startVAD(currentStream, currentContext, callIdRef.current || "conversation_listening")
+} else {
           log("AudioContext not running, skipping VAD start", {
             state: currentContext.state,
           })
@@ -494,7 +509,7 @@ export default function AIPhoneSystem() {
               latency_ms: Math.round(recStart - (ttsEndRef.current ?? recStart)),
             })
             ttsEndRef.current = null
-            startVAD(result.stream, result.audioContext)
+            startVAD(result.stream, result.audioContext, "visibility_recovery")
           }
         } catch (err) {
           log("Failed to reacquire audio after visibility change", err)
@@ -537,7 +552,7 @@ export default function AIPhoneSystem() {
             latency_ms: Math.round(recStart - (ttsEndRef.current ?? recStart)),
           })
           ttsEndRef.current = null
-          startVAD(result.stream, result.audioContext)
+          startVAD(result.stream, result.audioContext, "track_recovery")
         }
       } catch (err) {
         log("Failed to reinitialize audio after track ended", err)
@@ -564,7 +579,7 @@ export default function AIPhoneSystem() {
   useEffect(() => {
     return () => {
       log("Unmount cleanup: stopping audio only")
-      stopVAD()
+      stopVAD("unmount")
       cleanup()
       resetConversation()
     }

@@ -1,7 +1,12 @@
 "use client"
 
-import { useRef, useCallback, useEffect, useState } from "react"
+import { useRef, useCallback, useEffect, useState, MutableRefObject } from "react"
 import { debugLog } from "@/lib/debug"
+
+const genId = () =>
+  typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : Math.random().toString(36).slice(2, 10)
 
 interface VADOptions {
   silenceThreshold: number // in seconds
@@ -12,6 +17,7 @@ interface VADOptions {
   onSpeechEnd: () => void
   onSilenceDetected: () => void
   onMaxDurationReached: () => void
+  lastRmsRef?: MutableRefObject<number>
 }
 
 interface VADMetrics {
@@ -31,9 +37,10 @@ export function useVoiceActivityDetection({
   onSpeechEnd,
   onSilenceDetected,
   onMaxDurationReached,
+  lastRmsRef: externalLastRmsRef,
 }: VADOptions) {
   const analyserRef = useRef<AnalyserNode | null>(null)
-  const dataArrayRef = useRef<Uint8Array>(new Uint8Array())
+  const dataArrayRef = useRef<Float32Array>(new Float32Array())
   const silenceTimerRef = useRef<NodeJS.Timeout | null>(null)
   const maxDurationTimerRef = useRef<NodeJS.Timeout | null>(null)
   const isSpeakingRef = useRef(false)
@@ -41,8 +48,11 @@ export function useVoiceActivityDetection({
   const speechStartTimeRef = useRef<number | null>(null)
   const volumeHistoryRef = useRef<number[]>([])
   const lastVolumeCheckRef = useRef<number>(0)
-  const isVADRunningRef = useRef(false)
   const lastMetricsLogRef = useRef<number>(0)
+  const currentCallIdRef = useRef<string | null>(null)
+  const lastRmsRef = externalLastRmsRef ?? useRef(0)
+  const effectIdRef = useRef<string>(genId())
+  const isVADRunningRef = useRef(false)
 
   const [vadMetrics, setVadMetrics] = useState<VADMetrics>({
     currentVolume: 0,
@@ -55,19 +65,22 @@ export function useVoiceActivityDetection({
   const analyzeAudio = useCallback(() => {
     if (!analyserRef.current || !dataArrayRef.current) return
 
-    analyserRef.current.getByteFrequencyData(dataArrayRef.current as any)
+    analyserRef.current.getFloatTimeDomainData(dataArrayRef.current)
 
     // Calculate multiple volume metrics
-    const sum = dataArrayRef.current.reduce((acc, value) => acc + value, 0)
+    const sum = dataArrayRef.current.reduce((acc, value) => acc + Math.abs(value), 0)
     const average = sum / dataArrayRef.current.length
-    const normalizedVolume = average / dataArrayRef.current.length > 0 ? average / 255 : 0
+    const normalizedVolume = average
 
     // Calculate RMS (Root Mean Square) for better speech detection
     const rms = Math.sqrt(
-      dataArrayRef.current.reduce((acc, value) => acc + (value / 255) ** 2, 0) / dataArrayRef.current.length,
+      dataArrayRef.current.reduce((acc, value) => acc + value * value, 0) /
+        dataArrayRef.current.length,
     )
-    const peak =
-      dataArrayRef.current.reduce((m, v) => (v > m ? v : m), 0) / 255
+    const peak = dataArrayRef.current.reduce(
+      (m, v) => (Math.abs(v) > m ? Math.abs(v) : m),
+      0,
+    )
 
     // Maintain volume history for adaptive thresholding
     volumeHistoryRef.current.push(normalizedVolume)
@@ -83,13 +96,20 @@ export function useVoiceActivityDetection({
     const currentTime = Date.now()
     const isSpeaking = rms > adaptiveThreshold
 
-    if (currentTime - lastMetricsLogRef.current > 500) {
-      debugLog("VAD metrics", "tick", {
-        rms: Number(rms.toFixed(3)),
-        peak: Number(peak.toFixed(3)),
-        isSpeaking,
-        ts: currentTime,
-      })
+    lastRmsRef.current = rms
+    const callKey = currentCallIdRef.current ?? "global"
+    const lastTs = lastMetricsLogRef.current
+    if (currentTime - lastTs >= 200) {
+      debugLog(
+        "VAD",
+        "rms",
+        {
+          callId: currentCallIdRef.current,
+          rms: Number(rms.toFixed(3)),
+          peak: Number(peak.toFixed(3)),
+          isSpeaking,
+        },
+      )
       lastMetricsLogRef.current = currentTime
     }
 
@@ -115,12 +135,12 @@ export function useVoiceActivityDetection({
 
       // Set maximum duration timer
       maxDurationTimerRef.current = setTimeout(() => {
-        debugLog("VAD", "max_duration_reached")
+        debugLog("VAD", "max_duration_reached", { callId: currentCallIdRef.current })
         onMaxDurationReached()
       }, maxSpeechDuration * 1000)
 
       isSpeakingRef.current = true
-      debugLog("VAD", "speech_start")
+      debugLog("VAD", "speech_start", { callId: currentCallIdRef.current })
       onSpeechStart()
     } else if (!isSpeaking && isSpeakingRef.current) {
       // Potential speech end - start silence timer
@@ -134,9 +154,9 @@ export function useVoiceActivityDetection({
         // Only trigger speech end if minimum duration was met
         if (speechDuration >= minSpeechDuration) {
           isSpeakingRef.current = false
-          debugLog("VAD", "speech_end", { duration: speechDuration })
+          debugLog("VAD", "speech_end", { callId: currentCallIdRef.current, duration: speechDuration })
           onSpeechEnd()
-          debugLog("VAD", "silence_detected")
+          debugLog("VAD", "silence_detected", { callId: currentCallIdRef.current })
           onSilenceDetected()
           if (maxDurationTimerRef.current) {
             clearTimeout(maxDurationTimerRef.current)
@@ -160,15 +180,32 @@ export function useVoiceActivityDetection({
   ])
 
   const startVAD = useCallback(
-    (stream: MediaStream, audioContext: AudioContext) => {
+    (stream: MediaStream, audioContext: AudioContext, callId: string) => {
       if (isVADRunningRef.current) return
       try {
-        debugLog("VAD probe", "start", {
-          streamId: stream.id,
-          nodePath: "media->analyser",
+        currentCallIdRef.current = callId
+        lastMetricsLogRef.current = 0
+        const track = stream.getAudioTracks()[0]
+        debugLog("VAD", "config", {
+          callId,
           threshold: volumeThreshold,
+          silenceSec: silenceThreshold,
+          sampleRate: audioContext.sampleRate,
+          fftSize: 1024,
+          channelCount: track.getSettings().channelCount,
+          deviceId: track.getSettings().deviceId,
         })
         const source = audioContext.createMediaStreamSource(stream)
+        debugLog("VAD", "cms", {
+          callId,
+          streamId: stream.id,
+          track: {
+            id: track.id,
+            muted: track.muted,
+            enabled: track.enabled,
+            readyState: track.readyState,
+          },
+        })
         const analyser = audioContext.createAnalyser()
 
         analyser.fftSize = 1024
@@ -177,9 +214,14 @@ export function useVoiceActivityDetection({
         analyser.maxDecibels = -10
 
         source.connect(analyser)
+        const silent = audioContext.createGain()
+        silent.gain.value = 0
+        analyser.connect(silent)
+        silent.connect(audioContext.destination)
+        debugLog("VAD", "pull_through", { callId, connected: true })
 
         analyserRef.current = analyser
-        dataArrayRef.current = new Uint8Array(analyser.fftSize)
+        dataArrayRef.current = new Float32Array(analyser.fftSize)
 
         // Reset state
         volumeHistoryRef.current = []
@@ -187,17 +229,20 @@ export function useVoiceActivityDetection({
         lastVolumeCheckRef.current = Date.now()
 
         isVADRunningRef.current = true
-        debugLog("VAD", "vad_start")
+        debugLog("VAD", "vad_start", { callId })
         analyzeAudio()
       } catch (error) {
-        debugLog("VAD", "error_startVAD", { error })
+        debugLog("VAD", "error_startVAD", { callId, error })
       }
     },
-    [analyzeAudio, volumeThreshold],
+    [analyzeAudio, volumeThreshold, silenceThreshold],
   )
 
-  const stopVAD = useCallback(() => {
+  const stopVAD = useCallback((reason: string = "manual") => {
     if (!isVADRunningRef.current) return
+
+    const stack =
+      process.env.NODE_ENV !== "production" ? new Error().stack : undefined
 
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current)
@@ -215,7 +260,7 @@ export function useVoiceActivityDetection({
     }
 
     analyserRef.current = null
-    dataArrayRef.current = new Uint8Array()
+    dataArrayRef.current = new Float32Array()
     isSpeakingRef.current = false
     speechStartTimeRef.current = null
     volumeHistoryRef.current = []
@@ -228,28 +273,35 @@ export function useVoiceActivityDetection({
       isSpeaking: false,
     })
 
-    debugLog("VAD", "vad_stop")
+    debugLog("VAD", "vad_stop", { callId: currentCallIdRef.current, reason, ...(stack ? { stack } : {}) })
     isVADRunningRef.current = false
   }, [])
 
   useEffect(() => {
+    debugLog("Flow", "effect_mount", { effectId: effectIdRef.current, callId: currentCallIdRef.current })
     const interval = setInterval(() => {
-      debugLog("VAD", "summary", {
-        avgVolume: vadMetrics.averageVolume.toFixed(3),
-        currentVolume: vadMetrics.currentVolume.toFixed(3),
-        isSpeaking: vadMetrics.isSpeaking,
-      })
+      debugLog(
+        "VAD",
+        "summary",
+        {
+          callId: currentCallIdRef.current,
+          avgVolume: vadMetrics.averageVolume.toFixed(3),
+          currentVolume: vadMetrics.currentVolume.toFixed(3),
+          isSpeaking: vadMetrics.isSpeaking,
+        },
+      )
     }, 1000)
 
     return () => {
       clearInterval(interval)
-      stopVAD()
+      stopVAD("hook_cleanup")
     }
-  }, [vadMetrics, stopVAD])
+  }, [stopVAD])
 
   return {
     startVAD,
     stopVAD,
     vadMetrics,
+    lastRmsRef,
   }
 }
