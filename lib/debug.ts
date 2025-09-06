@@ -49,6 +49,14 @@ export function debugLog(
 ) {
   if (!debugEnabled) return;
   if (levelRanks[level] < levelRanks[currentLevel]) return;
+  // Throttle identical events to once per 1000ms
+  const key = `${comp}|${evt}`
+  const now = performance.now();
+  ;(debugLog as any)._last = (debugLog as any)._last || new Map<string, number>()
+  const last: Map<string, number> = (debugLog as any)._last
+  const prev = last.get(key) || 0
+  if (now - prev < 1000) return
+  last.set(key, now)
   let callId: any,
     corrId: any,
     data: any = undefined;
@@ -70,4 +78,22 @@ export function debugLog(
   if (corrId) logObject.corrId = corrId;
   if (data !== undefined) logObject.data = data;
   console.log(JSON.stringify(logObject));
+}
+
+// Lightweight breadcrumbs and snapshot helpers for observability
+export type Any = Record<string, unknown>
+
+const _crumbs: Any[] = []
+
+export function addCrumb(comp: string, evt: string, data: Any = {}) {
+  _crumbs.push({ ts: Date.now(), comp, evt, ...data })
+  if (_crumbs.length > 50) _crumbs.shift()
+}
+
+export function dumpCrumbs() {
+  return _crumbs.slice(-25)
+}
+
+export function logSnapshot(comp: string, tag: string, data: Any) {
+  debugLog(comp, "snapshot", { tag, ...data }, "info")
 }

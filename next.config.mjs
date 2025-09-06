@@ -1,9 +1,13 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
+  // Enable source maps in production to debug client errors
+  productionBrowserSourceMaps: true,
   
   experimental: {
     optimizePackageImports: ['lucide-react'],
+    // dynamicIO can help avoid unintended prerender in some cases
+    // dynamicIO: true,
   },
   
   async headers() {

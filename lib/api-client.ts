@@ -17,23 +17,23 @@ export class APIClient {
 
   async processConversation(audioBlob: Blob, conversationHistory: any[] = []) {
     try {
-      const formData = new FormData()
-      formData.append("audio", audioBlob, "audio.webm")
-      formData.append("conversationHistory", JSON.stringify(conversationHistory))
-
+      const audioBase64 = await blobToBase64(audioBlob)
       const corrId = crypto.randomUUID()
-      const audioField = formData.get("audio") as File | null
       debugLog("Net", "send", {
         corrId,
         target: "conversation",
-        hasAudio: !!audioField,
-        mime: audioField?.type,
-        size: audioField?.size,
+        hasAudio: true,
+        mime: audioBlob.type,
+        size: audioBlob.size,
+        mode: "json",
       })
       const response = await fetch(`${this.baseUrl}/api/conversation`, {
         method: "POST",
-        body: formData,
-        headers: { "X-Correlation-ID": corrId },
+        headers: {
+          "Content-Type": "application/json",
+          "X-Correlation-ID": corrId,
+        },
+        body: JSON.stringify({ audioBase64, mimeType: audioBlob.type, messages: conversationHistory }),
       })
 
       debugLog("Net", "response", {
@@ -43,11 +43,15 @@ export class APIClient {
         status: response.status,
       })
 
-      if (!response.ok) {
-        throw new Error(`API request failed: ${response.statusText}`)
+      let data: any = null
+      try { data = await response.json() } catch { data = null }
+      if (!response.ok || (data && data.ok === false)) {
+        const msg = (data && (data.message || data.error)) || response.statusText
+        const cid = data && data.corr_id
+        throw new Error(`conversation API error: ${msg}${cid ? ` (corr_id=${cid})` : ""}`)
       }
 
-      const result = await response.json()
+      const result = data
       debugLog("APIClient", "processConversation_ok")
 
       return result
@@ -165,4 +169,15 @@ export class APIClient {
       throw error
     }
   }
+}
+
+async function blobToBase64(blob: Blob): Promise<string> {
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const fr = new FileReader()
+    fr.onload = () => resolve(String(fr.result))
+    fr.onerror = reject
+    fr.readAsDataURL(blob)
+  })
+  const comma = dataUrl.indexOf(",")
+  return comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl
 }

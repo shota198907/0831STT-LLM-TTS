@@ -353,8 +353,14 @@ export function useConversationFlow({
     log("startListening")
     changeState("listening")
     clearAllTimeouts()
+    // Do not start silence timeout here; page will arm after VAD ready + grace
+  }, [changeState, clearAllTimeouts, log])
+
+  const armSilenceTimeout = useCallback(() => {
+    log("armSilenceTimeout")
+    clearAllTimeouts()
     startSilenceTimeout()
-  }, [changeState, startSilenceTimeout, clearAllTimeouts, log])
+  }, [startSilenceTimeout, clearAllTimeouts, log])
 
   const stopListening = useCallback(() => {
     log("stopListening")
@@ -402,5 +408,6 @@ export function useConversationFlow({
     endConversation,
     resetConversation,
     clearAllTimeouts,
+    armSilenceTimeout,
   }
 }

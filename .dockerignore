@@ -1,0 +1,22 @@
+# Exclude VCS and local configs
+.git
+.gitignore
+.env*
+
+# Node
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-store
+
+# Next.js build output (builder only needs source via COPY . . but keep image lean)
+.next
+out
+build
+
+# OS/Editor
+.DS_Store
+.idea
+.vscode
+

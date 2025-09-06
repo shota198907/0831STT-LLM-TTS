@@ -1,0 +1,184 @@
+
+> my-v0-project@0.1.0 dev /Users/sn/Desktop/0831_STT_TTS
+> next dev
+
+   ▲ Next.js 15.2.4
+   - Local:        http://localhost:3000
+   - Network:      http://192.168.10.103:3000
+   - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 1387ms
+ ○ Compiling / ...
+ ✓ Compiled / in 2.3s (747 modules)
+{"tsPerf":76355.328125,"tsIso":"2025-09-04T01:37:34.131Z","comp":"Debug","evt":"logging_enabled","level":"info","data":{}}
+{"tsPerf":76364.132792,"tsIso":"2025-09-04T01:37:34.140Z","comp":"App","evt":"RootLayout rendered","level":"info"}
+{"tsPerf":76403.882542,"tsIso":"2025-09-04T01:37:34.180Z","comp":"Debug","evt":"logging_enabled","level":"info","data":{}}
+{"tsPerf":76409.79075,"tsIso":"2025-09-04T01:37:34.186Z","comp":"AI Phone","evt":"Page module loaded","level":"info"}
+ GET / 200 in 2490ms
+ ✓ Compiled /_not-found in 285ms (733 modules)
+{"tsPerf":199077.276084,"tsIso":"2025-09-04T01:39:36.853Z","comp":"Debug","evt":"logging_enabled","level":"info","data":{}}
+{"tsPerf":199079.233,"tsIso":"2025-09-04T01:39:36.855Z","comp":"App","evt":"RootLayout rendered","level":"info"}
+ GET /.well-known/appspecific/com.chrome.devtools.json 404 in 366ms
+{"tsPerf":199246.9475,"tsIso":"2025-09-04T01:39:37.023Z","comp":"App","evt":"RootLayout rendered","level":"info"}
+ GET / 200 in 19ms
+ ○ Compiling /api/text-to-speech ...
+ ✓ Compiled /api/text-to-speech in 1853ms (1139 modules)
+{"tsPerf":203620.119917,"tsIso":"2025-09-04T01:39:41.396Z","comp":"Debug","evt":"logging_enabled","level":"info","data":{}}
+{"tsPerf":203624.556792,"tsIso":"2025-09-04T01:39:41.401Z","comp":"Ingress","evt":"tts","level":"info","data":{"corr_id":"b8886cc4-87e8-49e9-b719-3af480e2cc33","text_len":31}}
+{"tsPerf":203683.478792,"tsIso":"2025-09-04T01:39:41.460Z","comp":"GoogleServices","evt":"textToSpeech_request","level":"info","data":{"corr_id":"b8886cc4-87e8-49e9-b719-3af480e2cc33","text":"お電話ありがとうございます。アシスタントです。ご用件をどうぞ。"}}
+{"tsPerf":205056.562375,"tsIso":"2025-09-04T01:39:42.833Z","comp":"GoogleServices","evt":"textToSpeech_result","level":"info","data":{"corr_id":"b8886cc4-87e8-49e9-b719-3af480e2cc33","bytes":18624}}
+{"tsPerf":205056.642542,"tsIso":"2025-09-04T01:39:42.833Z","comp":"API TTS","evt":"generated","level":"info","data":{"corr_id":"b8886cc4-87e8-49e9-b719-3af480e2cc33","bytes":18624}}
+ POST /api/text-to-speech 200 in 3686ms
+{"tsPerf":268379.816125,"tsIso":"2025-09-04T01:40:46.156Z","comp":"App","evt":"RootLayout rendered","level":"info"}
+{"tsPerf":268401.263959,"tsIso":"2025-09-04T01:40:46.177Z","comp":"Debug","evt":"logging_enabled","level":"info","data":{}}
+{"tsPerf":268404.0575,"tsIso":"2025-09-04T01:40:46.180Z","comp":"AI Phone","evt":"Page module loaded","level":"info"}
+ GET / 200 in 84ms
+{"tsPerf":268594.70375,"tsIso":"2025-09-04T01:40:46.371Z","comp":"App","evt":"RootLayout rendered","level":"info"}
+ GET /.well-known/appspecific/com.chrome.devtools.json 404 in 25ms
+ ✓ Compiled in 304ms (730 modules)
+{"tsPerf":659942.568042,"tsIso":"2025-09-04T01:47:17.719Z","comp":"Debug","evt":"logging_enabled","level":"info","data":{}}
+{"tsPerf":659945.103584,"tsIso":"2025-09-04T01:47:17.721Z","comp":"App","evt":"RootLayout rendered","level":"info"}
+{"tsPerf":659966.860834,"tsIso":"2025-09-04T01:47:17.743Z","comp":"Debug","evt":"logging_enabled","level":"info","data":{}}
+{"tsPerf":659969.395542,"tsIso":"2025-09-04T01:47:17.746Z","comp":"AI Phone","evt":"Page module loaded","level":"info"}
+ GET / 200 in 112ms
+ ✓ Compiled in 217ms (730 modules)
+{"tsPerf":668729.632625,"tsIso":"2025-09-04T01:47:26.506Z","comp":"Debug","evt":"logging_enabled","level":"info","data":{}}
+{"tsPerf":668731.614584,"tsIso":"2025-09-04T01:47:26.508Z","comp":"App","evt":"RootLayout rendered","level":"info"}
+ GET / 200 in 56ms
+ ✓ Compiled /api/text-to-speech in 99ms (799 modules)
+{"tsPerf":677480.774375,"tsIso":"2025-09-04T01:47:35.257Z","comp":"Debug","evt":"logging_enabled","level":"info","data":{}}
+{"tsPerf":677484.520625,"tsIso":"2025-09-04T01:47:35.261Z","comp":"Ingress","evt":"tts","level":"info","data":{"corr_id":"ad95bd3a-5ce7-47ee-94f1-73a5b3fb9ab2","text_len":31}}
+{"tsPerf":677549.912917,"tsIso":"2025-09-04T01:47:35.326Z","comp":"GoogleServices","evt":"textToSpeech_request","level":"info","data":{"corr_id":"ad95bd3a-5ce7-47ee-94f1-73a5b3fb9ab2","text":"お電話ありがとうございます。アシスタントです。ご用件をどうぞ。"}}
+{"tsPerf":678733.273084,"tsIso":"2025-09-04T01:47:36.509Z","comp":"GoogleServices","evt":"textToSpeech_result","level":"info","data":{"corr_id":"ad95bd3a-5ce7-47ee-94f1-73a5b3fb9ab2","bytes":19776}}
+{"tsPerf":678733.357209,"tsIso":"2025-09-04T01:47:36.509Z","comp":"API TTS","evt":"generated","level":"info","data":{"corr_id":"ad95bd3a-5ce7-47ee-94f1-73a5b3fb9ab2","bytes":19776}}
+ POST /api/text-to-speech 200 in 1720ms
+ ✓ Compiled /_not-found in 158ms (1139 modules)
+{"tsPerf":680087.426875,"tsIso":"2025-09-04T01:47:37.864Z","comp":"Debug","evt":"logging_enabled","level":"info","data":{}}
+{"tsPerf":680089.179667,"tsIso":"2025-09-04T01:47:37.865Z","comp":"App","evt":"RootLayout rendered","level":"info"}
+ GET /.well-known/appspecific/com.chrome.devtools.json 404 in 232ms
+{"tsPerf":711537.057959,"tsIso":"2025-09-04T01:48:09.313Z","comp":"App","evt":"RootLayout rendered","level":"info"}
+{"tsPerf":711549.753875,"tsIso":"2025-09-04T01:48:09.326Z","comp":"Debug","evt":"logging_enabled","level":"info","data":{}}
+{"tsPerf":711552.699709,"tsIso":"2025-09-04T01:48:09.329Z","comp":"AI Phone","evt":"Page module loaded","level":"info"}
+ GET / 200 in 58ms
+{"tsPerf":711640.210792,"tsIso":"2025-09-04T01:48:09.416Z","comp":"App","evt":"RootLayout rendered","level":"info"}
+ GET /.well-known/appspecific/com.chrome.devtools.json 404 in 34ms
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ✓ Compiled in 522ms (730 modules)
+{"tsPerf":1574226.762,"tsIso":"2025-09-04T02:02:32.003Z","comp":"Debug","evt":"logging_enabled","level":"info","data":{}}
+{"tsPerf":1574229.196792,"tsIso":"2025-09-04T02:02:32.005Z","comp":"App","evt":"RootLayout rendered","level":"info"}
+{"tsPerf":1574277.266625,"tsIso":"2025-09-04T02:02:32.053Z","comp":"Debug","evt":"logging_enabled","level":"info","data":{}}
+{"tsPerf":1574296.293167,"tsIso":"2025-09-04T02:02:32.072Z","comp":"AI Phone","evt":"Page module loaded","level":"info"}
+ GET / 200 in 368ms
+ ✓ Compiled /_not-found in 101ms (720 modules)
+{"tsPerf":1574491.158167,"tsIso":"2025-09-04T02:02:32.267Z","comp":"Debug","evt":"logging_enabled","level":"info","data":{}}
+{"tsPerf":1574493.138,"tsIso":"2025-09-04T02:02:32.269Z","comp":"App","evt":"RootLayout rendered","level":"info"}
+ GET /.well-known/appspecific/com.chrome.devtools.json 404 in 166ms
+ ✓ Compiled in 230ms (734 modules)
+{"tsPerf":1581967.889459,"tsIso":"2025-09-04T02:02:39.744Z","comp":"Debug","evt":"logging_enabled","level":"info","data":{}}
+{"tsPerf":1581970.8525,"tsIso":"2025-09-04T02:02:39.747Z","comp":"App","evt":"RootLayout rendered","level":"info"}
+ GET / 200 in 29ms
+ ✓ Compiled in 138ms (734 modules)
+{"tsPerf":1598358.310667,"tsIso":"2025-09-04T02:02:56.134Z","comp":"Debug","evt":"logging_enabled","level":"info","data":{}}
+{"tsPerf":1598359.415959,"tsIso":"2025-09-04T02:02:56.136Z","comp":"App","evt":"RootLayout rendered","level":"info"}
+ GET / 200 in 26ms
+{"tsPerf":1732635.615542,"tsIso":"2025-09-04T02:05:10.412Z","comp":"App","evt":"RootLayout rendered","level":"info"}
+{"tsPerf":1732651.88575,"tsIso":"2025-09-04T02:05:10.428Z","comp":"Debug","evt":"logging_enabled","level":"info","data":{}}
+{"tsPerf":1732653.877125,"tsIso":"2025-09-04T02:05:10.430Z","comp":"AI Phone","evt":"Page module loaded","level":"info"}
+ GET / 200 in 49ms
+{"tsPerf":1735589.611542,"tsIso":"2025-09-04T02:05:13.366Z","comp":"App","evt":"RootLayout rendered","level":"info"}
+ GET /.well-known/appspecific/com.chrome.devtools.json 404 in 38ms
+ ○ Compiling /api/text-to-speech ...
+ ✓ Compiled /api/text-to-speech in 819ms (800 modules)
+{"tsPerf":1742148.22475,"tsIso":"2025-09-04T02:05:19.924Z","comp":"Debug","evt":"logging_enabled","level":"info","data":{}}
+{"tsPerf":1742154.948209,"tsIso":"2025-09-04T02:05:19.931Z","comp":"Ingress","evt":"tts","level":"info","data":{"corr_id":"b4bce247-7dd5-4385-9f87-2932ebeb156c","text_len":31}}
+{"tsPerf":1742226.935042,"tsIso":"2025-09-04T02:05:20.003Z","comp":"GoogleServices","evt":"textToSpeech_request","level":"info","data":{"corr_id":"b4bce247-7dd5-4385-9f87-2932ebeb156c","text":"お電話ありがとうございます。アシスタントです。ご用件をどうぞ。"}}
+{"tsPerf":1743482.588292,"tsIso":"2025-09-04T02:05:21.259Z","comp":"GoogleServices","evt":"textToSpeech_result","level":"info","data":{"corr_id":"b4bce247-7dd5-4385-9f87-2932ebeb156c","bytes":19872}}
+{"tsPerf":1743482.668,"tsIso":"2025-09-04T02:05:21.259Z","comp":"API TTS","evt":"generated","level":"info","data":{"corr_id":"b4bce247-7dd5-4385-9f87-2932ebeb156c","bytes":19872}}
+ POST /api/text-to-speech 200 in 2561ms
+{"tsPerf":1772877.94925,"tsIso":"2025-09-04T02:05:50.654Z","comp":"App","evt":"RootLayout rendered","level":"info"}
+{"tsPerf":1772909.990917,"tsIso":"2025-09-04T02:05:50.686Z","comp":"Debug","evt":"logging_enabled","level":"info","data":{}}
+{"tsPerf":1772914.243625,"tsIso":"2025-09-04T02:05:50.690Z","comp":"AI Phone","evt":"Page module loaded","level":"info"}
+ GET / 200 in 89ms
+{"tsPerf":1773077.368375,"tsIso":"2025-09-04T02:05:50.853Z","comp":"App","evt":"RootLayout rendered","level":"info"}
+ GET /.well-known/appspecific/com.chrome.devtools.json 404 in 80ms
+ ✓ Compiled in 473ms (730 modules)
+ ✓ Compiled in 138ms (730 modules)
+ ✓ Compiled in 106ms (730 modules)
+ ✓ Compiled in 232ms (730 modules)
+{"tsPerf":2308502.299709,"tsIso":"2025-09-04T02:14:46.278Z","comp":"Debug","evt":"logging_enabled","level":"info","data":{}}
+{"tsPerf":2308504.06475,"tsIso":"2025-09-04T02:14:46.280Z","comp":"App","evt":"RootLayout rendered","level":"info"}
+{"tsPerf":2308525.019709,"tsIso":"2025-09-04T02:14:46.301Z","comp":"Debug","evt":"logging_enabled","level":"info","data":{}}
+{"tsPerf":2308527.428209,"tsIso":"2025-09-04T02:14:46.304Z","comp":"AI Phone","evt":"Page module loaded","level":"info"}
+ GET / 200 in 111ms
+ ✓ Compiled /_not-found in 419ms (720 modules)
+{"tsPerf":2314522.438,"tsIso":"2025-09-04T02:14:52.299Z","comp":"Debug","evt":"logging_enabled","level":"info","data":{}}
+{"tsPerf":2314526.195459,"tsIso":"2025-09-04T02:14:52.302Z","comp":"App","evt":"RootLayout rendered","level":"info"}
+ GET /.well-known/appspecific/com.chrome.devtools.json 404 in 500ms
+{"tsPerf":2314564.600417,"tsIso":"2025-09-04T02:14:52.341Z","comp":"App","evt":"RootLayout rendered","level":"info"}
+ GET / 200 in 19ms
+ ○ Compiling /api/text-to-speech ...
+ ✓ Compiled /api/text-to-speech in 636ms (800 modules)
+{"tsPerf":2317459.706125,"tsIso":"2025-09-04T02:14:55.236Z","comp":"Debug","evt":"logging_enabled","level":"info","data":{}}
+{"tsPerf":2317463.289875,"tsIso":"2025-09-04T02:14:55.239Z","comp":"Ingress","evt":"tts","level":"info","data":{"corr_id":"4b484a9f-ade9-4c66-96bf-4af1ed2e3a6c","text_len":31}}
+{"tsPerf":2317528.178125,"tsIso":"2025-09-04T02:14:55.304Z","comp":"GoogleServices","evt":"textToSpeech_request","level":"info","data":{"corr_id":"4b484a9f-ade9-4c66-96bf-4af1ed2e3a6c","text":"お電話ありがとうございます。アシスタントです。ご用件をどうぞ。"}}
+{"tsPerf":2317560.227167,"tsIso":"2025-09-04T02:14:55.336Z","comp":"App","evt":"RootLayout rendered","level":"info"}
+ GET / 200 in 511ms
+{"tsPerf":2318745.701125,"tsIso":"2025-09-04T02:14:56.522Z","comp":"GoogleServices","evt":"textToSpeech_result","level":"info","data":{"corr_id":"4b484a9f-ade9-4c66-96bf-4af1ed2e3a6c","bytes":19776}}
+{"tsPerf":2318745.784709,"tsIso":"2025-09-04T02:14:56.522Z","comp":"API TTS","evt":"generated","level":"info","data":{"corr_id":"4b484a9f-ade9-4c66-96bf-4af1ed2e3a6c","bytes":19776}}
+ POST /api/text-to-speech 200 in 2321ms
+{"tsPerf":2344848.143084,"tsIso":"2025-09-04T02:15:22.624Z","comp":"Ingress","evt":"tts","level":"info","data":{"corr_id":"4a32e5ed-82b4-4860-a5c5-88d69a710abe","text_len":31}}
+{"tsPerf":2344848.276542,"tsIso":"2025-09-04T02:15:22.624Z","comp":"GoogleServices","evt":"textToSpeech_request","level":"info","data":{"corr_id":"4a32e5ed-82b4-4860-a5c5-88d69a710abe","text":"お電話ありがとうございます。アシスタントです。ご用件をどうぞ。"}}
+{"tsPerf":2345895.132209,"tsIso":"2025-09-04T02:15:23.671Z","comp":"GoogleServices","evt":"textToSpeech_result","level":"info","data":{"corr_id":"4a32e5ed-82b4-4860-a5c5-88d69a710abe","bytes":21696}}
+{"tsPerf":2345895.20825,"tsIso":"2025-09-04T02:15:23.671Z","comp":"API TTS","evt":"generated","level":"info","data":{"corr_id":"4a32e5ed-82b4-4860-a5c5-88d69a710abe","bytes":21696}}
+ POST /api/text-to-speech 200 in 1051ms
+{"tsPerf":2348478.809375,"tsIso":"2025-09-04T02:15:26.255Z","comp":"App","evt":"RootLayout rendered","level":"info"}
+{"tsPerf":2348500.453042,"tsIso":"2025-09-04T02:15:26.277Z","comp":"Debug","evt":"logging_enabled","level":"info","data":{}}
+{"tsPerf":2348503.446042,"tsIso":"2025-09-04T02:15:26.280Z","comp":"AI Phone","evt":"Page module loaded","level":"info"}
+ GET / 200 in 57ms
+{"tsPerf":2348698.44625,"tsIso":"2025-09-04T02:15:26.475Z","comp":"App","evt":"RootLayout rendered","level":"info"}
+ GET /.well-known/appspecific/com.chrome.devtools.json 404 in 38ms
+{"tsPerf":2793939.163917,"tsIso":"2025-09-04T02:22:51.715Z","comp":"App","evt":"RootLayout rendered","level":"info"}
+ GET / 200 in 31ms
+{"tsPerf":2797120.883667,"tsIso":"2025-09-04T02:22:54.897Z","comp":"App","evt":"RootLayout rendered","level":"info"}
+ GET /.well-known/appspecific/com.chrome.devtools.json 404 in 33ms
+{"tsPerf":2804918.013375,"tsIso":"2025-09-04T02:23:02.694Z","comp":"Ingress","evt":"tts","level":"info","data":{"corr_id":"d7a6ede6-5b19-4f9a-a7bd-530c7d15332e","text_len":31}}
+{"tsPerf":2804918.259,"tsIso":"2025-09-04T02:23:02.694Z","comp":"GoogleServices","evt":"textToSpeech_request","level":"info","data":{"corr_id":"d7a6ede6-5b19-4f9a-a7bd-530c7d15332e","text":"お電話ありがとうございます。アシスタントです。ご用件をどうぞ。"}}
+{"tsPerf":2806204.124584,"tsIso":"2025-09-04T02:23:03.980Z","comp":"GoogleServices","evt":"textToSpeech_result","level":"info","data":{"corr_id":"d7a6ede6-5b19-4f9a-a7bd-530c7d15332e","bytes":19872}}
+{"tsPerf":2806204.207084,"tsIso":"2025-09-04T02:23:03.980Z","comp":"API TTS","evt":"generated","level":"info","data":{"corr_id":"d7a6ede6-5b19-4f9a-a7bd-530c7d15332e","bytes":19872}}
+ POST /api/text-to-speech 200 in 1294ms
+ ✓ Compiled in 342ms (730 modules)
+{"tsPerf":2924254.015334,"tsIso":"2025-09-04T02:25:02.030Z","comp":"Debug","evt":"logging_enabled","level":"info","data":{}}
+{"tsPerf":2924255.621292,"tsIso":"2025-09-04T02:25:02.032Z","comp":"App","evt":"RootLayout rendered","level":"info"}
+ GET / 200 in 85ms
+ ✓ Compiled in 112ms (350 modules)
+{"tsPerf":3412178.255959,"tsIso":"2025-09-04T02:33:09.954Z","comp":"App","evt":"RootLayout rendered","level":"info"}
+ GET / 200 in 26ms
+ ✓ Compiled in 231ms (730 modules)
+{"tsPerf":3429271.073417,"tsIso":"2025-09-04T02:33:27.047Z","comp":"Debug","evt":"logging_enabled","level":"info","data":{}}
+{"tsPerf":3429272.805125,"tsIso":"2025-09-04T02:33:27.049Z","comp":"App","evt":"RootLayout rendered","level":"info"}
+ GET / 200 in 61ms
+ ✓ Compiled in 61ms (350 modules)
+{"tsPerf":3475368.896875,"tsIso":"2025-09-04T02:34:13.145Z","comp":"App","evt":"RootLayout rendered","level":"info"}
+ GET / 200 in 12ms
+ ✓ Compiled in 71ms (350 modules)
+{"tsPerf":3526842.28775,"tsIso":"2025-09-04T02:35:04.618Z","comp":"App","evt":"RootLayout rendered","level":"info"}
+ GET / 200 in 10ms
+{"tsPerf":26775409.228792,"tsIso":"2025-09-04T09:02:33.185Z","comp":"App","evt":"RootLayout rendered","level":"info"}
+{"tsPerf":26775439.066209,"tsIso":"2025-09-04T09:02:33.215Z","comp":"Debug","evt":"logging_enabled","level":"info","data":{}}
+{"tsPerf":26775442.292042,"tsIso":"2025-09-04T09:02:33.218Z","comp":"AI Phone","evt":"Page module loaded","level":"info"}
+ GET / 200 in 71ms
+ ✓ Compiled in 267ms (730 modules)
+ ✓ Compiled in 112ms (730 modules)
+ ✓ Compiled in 163ms (730 modules)
+ ✓ Compiled in 133ms (730 modules)
+ ✓ Compiled in 111ms (730 modules)
+ ✓ Compiled in 215ms (730 modules)
+ ✓ Compiled in 141ms (730 modules)
+ ✓ Compiled in 100ms (730 modules)
+ ✓ Compiled in 95ms (730 modules)
+ ✓ Compiled in 120ms (730 modules)
+ ✓ Compiled in 101ms (350 modules)
+ ✓ Compiled in 395ms (732 modules)
+ ✓ Compiled in 147ms (732 modules)
+ ✓ Compiled in 278ms (732 modules)

@@ -1,7 +1,7 @@
 "use client"
 
 import { useRef, useCallback, useState } from "react"
-import { debugLog } from "@/lib/debug"
+import { debugLog, addCrumb } from "@/lib/debug"
 
 interface WebRTCAudioOptions {
   onAudioData: (audioBlob: Blob) => Promise<void> | void
@@ -77,6 +77,7 @@ export function useWebRTCAudio({ onAudioData, onError }: WebRTCAudioOptions) {
 
     isStartingRef.current = true
     try {
+      debugLog("REC", "rec_state", { op: "start", reason: "startRecording", from: isRecording ? "active" : "idle" })
       // 🔑 重要: ユーザー操作直後に必ず resume（モバイル/Chrome対策）
       if (audioContextRef.current?.state === "suspended") {
         await audioContextRef.current.resume()
@@ -103,6 +104,7 @@ export function useWebRTCAudio({ onAudioData, onError }: WebRTCAudioOptions) {
       }
 
       mediaRecorder.onerror = () => {
+        debugLog("REC", "unexpected_stop", { where: "onerror" }, "warn")
         onError(new Error("Recording failed"))
       }
 
@@ -112,6 +114,7 @@ export function useWebRTCAudio({ onAudioData, onError }: WebRTCAudioOptions) {
       recordStartRef.current = performance.now()
 
       debugLog("MR", "start")
+      debugLog("REC", "rec_state", { op: "started", reason: "mediaRecorder.start", to: "active" })
 
     } catch (error) {
       onError(error as Error)
@@ -173,6 +176,7 @@ export function useWebRTCAudio({ onAudioData, onError }: WebRTCAudioOptions) {
             flush_last_chunk_ms: Math.round(end - start),
           })
           audioChunksRef.current = []
+          debugLog("REC", "rec_state", { op: "stop", reason: "onstop", to: "idle" })
           resolve()
         } catch (err) {
           reject(err)
@@ -198,7 +202,7 @@ export function useWebRTCAudio({ onAudioData, onError }: WebRTCAudioOptions) {
     return stopPromiseRef.current
   }, [isRecording, onAudioData, onError])
 
-  const cleanup = useCallback(() => {
+  const cleanup = useCallback((source: string = "manual") => {
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop()
     }
@@ -209,21 +213,33 @@ export function useWebRTCAudio({ onAudioData, onError }: WebRTCAudioOptions) {
       })
     }
 
-    if (audioContextRef.current && audioContextRef.current.state !== "closed") {
-      audioContextRef.current.close()
-    }
-
+    debugLog("WebRTC", "cleanup", { source, hadStream: !!streamRef.current, hadRecorder: !!mediaRecorderRef.current }, "info")
+    addCrumb("WebRTC", "cleanup", { source })
     mediaRecorderRef.current = null
     streamRef.current = null
-    audioContextRef.current = null
     setIsRecording(false)
   }, [isRecording])
+
+  // Dispose for true unmount: also close AudioContext
+  const dispose = useCallback(async () => {
+    try {
+      cleanup()
+    } finally {
+      if (audioContextRef.current && audioContextRef.current.state !== "closed") {
+        try {
+          await audioContextRef.current.close()
+        } catch {}
+      }
+      audioContextRef.current = null
+    }
+  }, [cleanup])
 
   return {
     initializeAudio,
     startRecording,
     stopRecording,
     cleanup,
+    dispose,
     isRecording,
     stream: streamRef.current,
     audioContext: audioContextRef.current,
