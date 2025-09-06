@@ -23,7 +23,7 @@ const EOU_GRACE_MS = Number(process.env.EOU_GRACE_MS || 300)
 const server = http.createServer((req, res) => {
   const url = new NodeURL(req.url || '/', `http://${req.headers.host || 'localhost'}`)
   const p = url.pathname
-  if (p === '/healthz' || p === '/healthz/' || p === '/livez' || p === '/livez/') {
+  if (p === '/' || p === '/healthz' || p === '/healthz/' || p === '/livez' || p === '/livez/') {
     res.writeHead(200, { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' })
     if (req.method === 'HEAD') { res.end(); return }
     res.end('ok'); return
@@ -253,6 +253,7 @@ wss.on('connection', (ws, req) => {
 // startup log for observability
 console.log(JSON.stringify({ evt: 'READY', transport: 'websocket', grpc_planned: false, ws_path: WS_PATH }))
 
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
+  try { console.log(JSON.stringify({ evt: 'startup', port: PORT })) } catch {}
   console.log(`WS gateway listening on :${PORT}`)
 })
