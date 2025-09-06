@@ -99,6 +99,9 @@ wss.on('connection', (ws, req) => {
     }
   }, 1000)
 
+  // Visible ACK on connect (helps client observers)
+  try { ws.send(JSON.stringify({ type: 'ack', hello: true })) } catch {}
+
   ws.on('close', async (code, reason) => {
     clearInterval(iv); clearInterval(idleTimer)
     try {
@@ -191,6 +194,14 @@ wss.on('connection', (ws, req) => {
       })
       clearTimeout(to)
       const json = await res.json().catch(() => null)
+      // debug: show keys of conversation response
+      try {
+        console.log(JSON.stringify({
+          evt: 'conv_json_keys',
+          session_id: sessionId,
+          keys: (json && typeof json === 'object') ? Object.keys(json) : []
+        }))
+      } catch {}
       if (!res.ok || !json || json.ok === false) {
         const status = res.status
         const message = (json && (json.message || json.error)) || res.statusText
@@ -199,11 +210,36 @@ wss.on('connection', (ws, req) => {
       }
       const elapsed = Date.now() - started
       try { console.log(JSON.stringify({ evt: 'reply', session_id: sessionId, elapsed_ms: elapsed })) } catch {}
-      if (json.aiResponse) {
-        ws.send(JSON.stringify({ type: 'result', result: { type: 'text', data: json.aiResponse } }))
-      }
-      if (json.audioBase64) {
-        ws.send(JSON.stringify({ type: 'result', result: { type: 'audio', data: { base64: json.audioBase64, mime: json.mimeType || 'audio/mpeg' } } }))
+      // Normalize response fields
+      const txt = (json?.text ?? json?.ai_text ?? json?.aiResponse ?? json?.result?.text ?? null)
+      const b64 = (json?.audioBase64 ?? json?.audio_base64 ?? json?.result?.audioBase64 ?? null)
+      const url = (json?.tts_url ?? json?.audioUrl ?? json?.url ?? json?.result?.tts_url ?? null)
+      const mime = (json?.mimeType ?? json?.mimetype ?? 'audio/mpeg')
+      // debug: planned ws tx kinds
+      try {
+        console.log(JSON.stringify({
+          evt: 'ws_tx_plan',
+          session_id: sessionId,
+          kinds: { text: !!txt, b64: !!b64, url: !!url },
+          mime
+        }))
+      } catch {}
+
+      // A) Generic result envelope
+      if (txt)  ws.send(JSON.stringify({ type: 'result', result: { type: 'text',  data: txt } }))
+      if (b64)  ws.send(JSON.stringify({ type: 'result', result: { type: 'audio', data: { base64: b64, mime } } }))
+      else if (url) ws.send(JSON.stringify({ type: 'result', result: { type: 'audio', data: { url,    mime } } }))
+
+      // B) Compatibility messages for existing UI handlers
+      if (txt)  ws.send(JSON.stringify({ type: 'ai_sentence', text: txt }))
+      if (b64)  ws.send(JSON.stringify({ type: 'tts_chunk',  base64: b64, mime }))
+      else if (url) ws.send(JSON.stringify({ type: 'tts_url', url,   mime }))
+
+      // TX observation
+      try { console.log(JSON.stringify({ evt: 'ws_tx', kinds: { text: !!txt, b64: !!b64, url: !!url }, session_id: sessionId })) } catch {}
+
+      if (!txt && !b64 && !url) {
+        ws.send(JSON.stringify({ type: 'result', result: { type: 'error', data: { status: res.status, message: 'no_mappable_fields', keys: Object.keys(json || {}) } } }))
       }
       try { ws.send(JSON.stringify({ type: 'close', code: 1000, reason: 'ok' })) } catch {}
     } catch (e) {
