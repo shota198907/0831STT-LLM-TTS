@@ -50,7 +50,8 @@ export default function StreamingBoot({
       }
 
       if (!wsClientRef.current) {
-        const params = new URL(location.href).searchParams
+        const UrlCtor: any = (typeof window !== 'undefined' && (window as any).URL) ? (window as any).URL : (globalThis as any).URL
+        const params = new UrlCtor(location.href).searchParams
         const q = params.get('ws')
         const qToken = params.get('token')
         const envOrigin = process.env.NEXT_PUBLIC_WS_ORIGIN ? String(process.env.NEXT_PUBLIC_WS_ORIGIN) : ''
@@ -73,10 +74,41 @@ export default function StreamingBoot({
           onError: (e: any) => { log("WS error", e); onWsStateChange?.('error') },
           onState: (s) => { onWsStateChange?.(s) },
           onText: (m: any) => {
-            if (m.type === "ai_sentence") {
-              addMessage("ai", m.text)
-              setAiSpeaking()
-              clearAllTimeouts()
+            try {
+              if (m.type === "ai_sentence") {
+                addMessage("ai", m.text)
+                setAiSpeaking()
+                clearAllTimeouts()
+                return
+              }
+              if (m.type === 'result' && m.result) {
+                if (m.result.type === 'text' && typeof m.result.data === 'string') {
+                  addMessage('ai', m.result.data)
+                  setAiSpeaking()
+                  clearAllTimeouts()
+                  return
+                }
+                if (m.result.type === 'audio' && m.result.data) {
+                  const mime = m.result.data.mime || 'audio/mpeg'
+                  if (m.result.data.base64) {
+                    const src = `data:${mime};base64,${m.result.data.base64}`
+                    const a = new Audio(src)
+                    void a.play().catch(() => {})
+                    return
+                  }
+                  if (m.result.data.url) {
+                    const a = new Audio(String(m.result.data.url))
+                    void a.play().catch(() => {})
+                    return
+                  }
+                }
+                if (m.result.type === 'error') {
+                  log('WS result error', m.result.data)
+                  return
+                }
+              }
+            } catch (e) {
+              log('WS onText handler error', String(e))
             }
           },
           onTTS: (meta: any, bin: ArrayBuffer) => {
