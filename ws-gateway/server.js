@@ -1,5 +1,6 @@
 import http from 'http'
 import crypto from 'crypto'
+import { URL as NodeURL } from 'url'
 import { WebSocketServer } from 'ws'
 
 /** env/config */
@@ -12,10 +13,12 @@ const REQUIRE_TOKEN = String(process.env.REQUIRE_TOKEN || 'false').toLowerCase()
 const WS_TOKEN = process.env.WS_TOKEN || ''
 
 const server = http.createServer((req, res) => {
-  if (req.url === '/healthz') {
-    res.writeHead(200, { 'Content-Type': 'text/plain' })
-    res.end('ok')
-    return
+  const url = new NodeURL(req.url || '/', `http://${req.headers.host || 'localhost'}`)
+  const p = url.pathname
+  if (p === '/healthz' || p === '/healthz/') {
+    res.writeHead(200, { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' })
+    if (req.method === 'HEAD') { res.end(); return }
+    res.end('ok'); return
   }
   res.writeHead(426, { 'Content-Type': 'text/plain' })
   res.end(`WebSocket endpoint is at ${WS_PATH}`)
@@ -82,7 +85,8 @@ wss.on('connection', (ws, req) => {
     frames += 1
     const size = isBinary ? (data?.byteLength || 0) : Buffer.byteLength(String(data || ''))
     bytes += size
-    if (bytes > MAX_MSG_BYTES) {
+    // per-message max size check
+    if (size > MAX_MSG_BYTES) {
       try { ws.close(1009, 'too_large') } catch {}
       return
     }

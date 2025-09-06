@@ -50,13 +50,23 @@ export default function StreamingBoot({
       }
 
       if (!wsClientRef.current) {
-        const q = new URL(location.href).searchParams.get('ws')
-        const external = q
-          ? q.replace(/\/$/, '')
-          : (process.env.NEXT_PUBLIC_WS_ORIGIN ? String(process.env.NEXT_PUBLIC_WS_ORIGIN).replace(/\/$/, '') : null)
-        const wsUrl = external
-          ? `${external}/ws`
-          : `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/api/ws/conversation`
+        const params = new URL(location.href).searchParams
+        const q = params.get('ws')
+        const qToken = params.get('token')
+        const envOrigin = process.env.NEXT_PUBLIC_WS_ORIGIN ? String(process.env.NEXT_PUBLIC_WS_ORIGIN) : ''
+        const envToken = process.env.NEXT_PUBLIC_WS_TOKEN ? String(process.env.NEXT_PUBLIC_WS_TOKEN) : ''
+        // URL selection: query param wins (as-is, full URL expected). Env appends /ws if missing.
+        let wsUrl: string
+        if (q) {
+          wsUrl = q
+        } else if (envOrigin) {
+          const trimmed = envOrigin.replace(/\/$/, '')
+          wsUrl = /\/ws(\/?$)/.test(trimmed) ? trimmed : `${trimmed}/ws`
+        } else {
+          wsUrl = `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/api/ws/conversation`
+        }
+        const token = qToken || envToken || ''
+        const subprotocol = token ? [token] : undefined
         const client = new StreamingClient(wsUrl, {
           onOpen: () => { log("WS open"); onWsStateChange?.('open') },
           onClose: () => { log("WS close"); onWsStateChange?.('closed') },
@@ -78,7 +88,7 @@ export default function StreamingBoot({
             }
             audioQueueRef.current?.enqueue({ arrayBuffer: bin, mime: meta.mime || "audio/mpeg", seq: meta.seq })
           },
-        })
+        }, subprotocol)
         onWsStateChange?.('connecting')
         client.connect()
         wsClientRef.current = client

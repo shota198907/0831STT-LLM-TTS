@@ -25,13 +25,20 @@ Deploy the gateway to Cloud Run (allow unauth). Set `ALLOWED_ORIGIN=https://<nex
 
 The app connects to an external WS when available:
 
-1. Query param `?ws=wss://host/path` (highest priority)
-2. Env `NEXT_PUBLIC_WS_ORIGIN=wss://host` (then `/ws` is appended)
+1. Query param `?ws=wss://host/path` (highest priority; full URL, typically ends with `/ws`)
+2. Env `NEXT_PUBLIC_WS_ORIGIN=wss://host` (auto-appends `/ws` if missing)
 3. Fallback to internal WS route `/api/ws/conversation`
 
 If no WS is available/OPEN, the app falls back to REST automatically.
 
+### Token via subprotocol
+
+If a token is provided, the client sends it as Sec-WebSocket-Protocol during the handshake:
+- Query param: `?token=XXXX`
+- Env: `NEXT_PUBLIC_WS_TOKEN=XXXX`
+
+Example: `...?ws=wss://gateway.run.app/ws&token=XXXX`
+
 ## ADR
 
 See `docs/ADR/0001-transport-decision.md` for transport decision and scope.
-

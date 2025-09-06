@@ -32,15 +32,17 @@ export class StreamingClient {
   private events: Events
   private pendingTTSMeta: InboundTTSMeta | null = null
   private stateCbs: Array<(s: 'connecting' | 'open' | 'closed' | 'error') => void> = []
+  private protocols?: string | string[]
 
-  constructor(url: string, events: Events = {}) {
+  constructor(url: string, events: Events = {}, protocols?: string | string[]) {
     this.url = url
     this.events = events
+    this.protocols = protocols
   }
 
   connect() {
     if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) return
-    this.ws = new WebSocket(this.url)
+    this.ws = this.protocols ? new WebSocket(this.url, this.protocols) : new WebSocket(this.url)
     this.ws.binaryType = 'arraybuffer'
     this._emitState('connecting')
     this.ws.onopen = () => { this.events.onOpen?.(); this._emitState('open') }
