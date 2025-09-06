@@ -46,6 +46,13 @@ export default function AppRoot() {
   const callIdRef = useRef<string>("")
   const ff = useMemo(() => resolveFeatureFlags(), [])
   const streamingEnabled = ff.streaming.enabled
+  const forceStreamAll = useMemo(() => {
+    try {
+      const sp = new URL(location.href).searchParams
+      if (sp.get('force_stream_all') === '1') return true
+    } catch {}
+    return String(process.env.NEXT_PUBLIC_FORCE_STREAM_ALL || '').toLowerCase() === 'true'
+  }, [])
 
   const log = useCallback(
     (message: string, data?: any, level: LogLevel = "info") =>
@@ -182,6 +189,10 @@ export default function AppRoot() {
   const turnIdRef = useRef<string>("")
   const prevConvStateRef = useRef<string>("")
   const silenceArmedRef = useRef(false)
+  const captureModeRef = useRef<'idle'|'ws'|'rest'>('idle')
+  const sentFramesRef = useRef(0)
+  const sentBytesRef = useRef(0)
+  const sentTickerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const stopRecordingAndVAD = useCallback(async (reason: string = "manual") => {
     clearSpeechEndTimer(); stopListening()
@@ -249,7 +260,15 @@ export default function AppRoot() {
   const { start: startStreamRec, stop: stopStreamRec } = useAudioStreaming({
     getStream: () => streamRefLatest.current ?? stream ?? null,
     timesliceMs: 200,
-    onChunk: (buf) => { try { wsClientRef.current?.sendBinary(buf) } catch {} },
+    onChunk: (buf) => {
+      try {
+        if (captureModeRef.current === 'ws') {
+          wsClientRef.current?.sendBinary(buf)
+          sentFramesRef.current += 1
+          sentBytesRef.current += (buf as ArrayBuffer).byteLength || 0
+        }
+      } catch {}
+    },
   })
 
   const unlockPlayback = useCallback(async (ctx?: AudioContext) => {
@@ -325,11 +344,23 @@ export default function AppRoot() {
         await ensureAudioContextRunning(currentContext)
         if (currentContext.state !== 'running') { log("AudioContext not running, skipping VAD start", { state: currentContext.state }); isCapturingRef.current = false; return }
 
-        const recStart = performance.now(); log("Starting recording and VAD based on conversation state")
-        if (streamingEnabled && wsOpenRef.current) {
+        const recStart = performance.now(); log("Starting recording and VAD based on conversation state", { forceStreamAll })
+        if ((streamingEnabled || forceStreamAll) && wsOpenRef.current) {
           try { wsClientRef.current?.send({ type: 'start', sessionId: callIdRef.current || 's', sampleRate: currentContext.sampleRate, lang: 'ja-JP', codec: 'opus' }) } catch {}
+          captureModeRef.current = 'ws'
+          sentFramesRef.current = 0
+          sentBytesRef.current = 0
+          if (forceStreamAll && !sentTickerRef.current) {
+            sentTickerRef.current = setInterval(() => {
+              log("STRM sent", { frames: sentFramesRef.current, bytes: sentBytesRef.current })
+              sentFramesRef.current = 0
+              sentBytesRef.current = 0
+            }, 1000)
+          }
           await startStreamRec()
         } else {
+          captureModeRef.current = 'rest'
+          if (sentTickerRef.current) { clearInterval(sentTickerRef.current); sentTickerRef.current = null }
           await RecorderSoT.start("flow_listening")
         }
         log("Recording started", { rec_start_ts: recStart, latency_ms: Math.round(recStart - (ttsEndRef.current ?? recStart)) })
@@ -352,6 +383,7 @@ export default function AppRoot() {
       debugLog("App", "unmount_cleanup", { reason: "react_effect_cleanup", conversationState, hasStream: !!stream, isRecording }, "info")
       log("Unmount cleanup: stopping audio only"); stopVADRef.current("unmount"); cleanup("react_effect_cleanup"); resetConversation(); clearSpeechEndTimer(); try { wsClientRef.current?.close() } catch {}
       isCapturingRef.current = false; turnIdRef.current = ""
+      if (sentTickerRef.current) { clearInterval(sentTickerRef.current); sentTickerRef.current = null }
     }
   }, [])
 
