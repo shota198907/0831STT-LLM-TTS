@@ -15,7 +15,7 @@ const WS_TOKEN = process.env.WS_TOKEN || ''
 const server = http.createServer((req, res) => {
   const url = new NodeURL(req.url || '/', `http://${req.headers.host || 'localhost'}`)
   const p = url.pathname
-  if (p === '/healthz' || p === '/healthz/') {
+  if (p === '/healthz' || p === '/healthz/' || p === '/livez' || p === '/livez/') {
     res.writeHead(200, { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' })
     if (req.method === 'HEAD') { res.end(); return }
     res.end('ok'); return
