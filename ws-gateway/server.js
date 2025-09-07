@@ -183,15 +183,18 @@ wss.on('connection', (ws, req) => {
     // Build JSON request body (matches existing Next API: { audioBase64, mimeType, messages })
     const audioBase64 = webm.toString('base64')
     const body = JSON.stringify({ audioBase64, mimeType: 'audio/webm;codecs=opus', messages: [] })
+    const ct = 'application/json'
+    try { console.log(JSON.stringify({ evt: 'conv_req_probe', ct, len: (body && body.length) || null })) } catch {}
     const ctrl = new AbortController()
     const to = setTimeout(() => ctrl.abort(), 60_000)
     try {
       const res = await fetch(CONVERSATION_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Correlation-ID': sessionId },
+        headers: { 'Content-Type': ct, 'X-Correlation-ID': sessionId },
         body,
         signal: ctrl.signal,
       })
+      try { console.log(JSON.stringify({ evt: 'conv_res_probe', status: res.status, respCt: res.headers.get('content-type') || null })) } catch {}
       clearTimeout(to)
       const json = await res.json().catch(() => null)
       // debug: show keys of conversation response
