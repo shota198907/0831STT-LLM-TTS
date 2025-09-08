@@ -5,6 +5,7 @@ import { mapRecognitionConfig } from "@/lib/stt-utils"
 import { randomUUID } from "crypto"
 import { promises as fs } from "fs"
 import path from "path"
+import os from "node:os";
 
 export async function POST(request: NextRequest) {
   const corrId = request.headers.get("x-correlation-id") || randomUUID()
@@ -88,7 +89,7 @@ export async function POST(request: NextRequest) {
 
 async function saveSample(buffer: Buffer, corrId: string, mime: string) {
   const ext = mime.split("/")[1] || "bin"
-  const storagePath = path.join(process.cwd(), "tmp", `${corrId}.${ext}`)
+  const storagePath = path.join(os.tmpdir(), `${corrId}.${ext}`)
   await fs.mkdir(path.dirname(storagePath), { recursive: true })
   await fs.writeFile(storagePath, buffer)
   debugLog("SAVE SAMPLE", "stt", { corr_id: corrId, storage_path: storagePath })
