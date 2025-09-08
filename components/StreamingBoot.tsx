@@ -64,7 +64,7 @@ export default function StreamingBoot({
           const trimmed = envOrigin.replace(/\/$/, '')
           wsUrl = /\/ws(\/?$)/.test(trimmed) ? trimmed : `${trimmed}/ws`
         } else {
-          wsUrl = `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/api/ws/conversation`
+          wsUrl = `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//ws-gateway-886467077835.asia-northeast1.run.app/ws`
         }
         const token = qToken || envToken || ''
         const subprotocol = token ? [token] : undefined
