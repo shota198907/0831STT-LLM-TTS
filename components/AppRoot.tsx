@@ -210,9 +210,19 @@ export default function AppRoot() {
 
   const handleSpeechStart = useCallback(() => { log("Speech started"); setCallState("user-speaking"); clearAllTimeouts(); clearSpeechEndTimer() }, [log, clearAllTimeouts, clearSpeechEndTimer])
   const handleSpeechEnd = useCallback(() => {
-    log("Speech ended"); if (streamingEnabled) { (window as any).__ts_user_speech_ended = performance.now(); log("perf", { evt: "user_speech_ended", ts: (window as any).__ts_user_speech_ended }) }
-    clearSpeechEndTimer(); speechEndTimerRef.current = setTimeout(() => { void stopRecordingAndVAD("speech_end") }, 800)
-  }, [stopRecordingAndVAD, log, clearSpeechEndTimer, streamingEnabled])
+    log("Speech ended")
+    if (streamingEnabled) {
+      ;(window as any).__ts_user_speech_ended = performance.now()
+      log("perf", { evt: "user_speech_ended", ts: (window as any).__ts_user_speech_ended })
+    }
+    // In force stream mode, do not stop recording on speech end; let GW silence timer auto-forward
+    if (forceStreamAll) {
+      log("Speech end ignored due to force_stream_all")
+      return
+    }
+    clearSpeechEndTimer()
+    speechEndTimerRef.current = setTimeout(() => { void stopRecordingAndVAD("speech_end") }, 800)
+  }, [stopRecordingAndVAD, log, clearSpeechEndTimer, streamingEnabled, forceStreamAll])
   const handleMaxDurationReached = useCallback(async () => { log("Maximum speech duration reached - forcing stop"); await stopRecordingAndVAD("max_duration"); log("Recording stopped due to max duration") }, [stopRecordingAndVAD, log])
 
   const vadSilenceThreshold = Number(process.env.NEXT_PUBLIC_VAD_SILENCE_THRESHOLD ?? 1.2)

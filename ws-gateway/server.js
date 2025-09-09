@@ -2,6 +2,7 @@ import http from 'http'
 import crypto from 'crypto'
 import { URL as NodeURL } from 'url'
 import { setTimeout as delay } from 'timers/promises'
+import { SpeechClient } from '@google-cloud/speech'
 import { WebSocketServer } from 'ws'
 
 /** env/config */
@@ -17,8 +18,9 @@ const WS_TOKEN = process.env.WS_TOKEN || ''
 const CONVERSATION_URL = process.env.CONVERSATION_URL || ''
 const MAX_BYTES = Number(process.env.MAX_BYTES || 16 * 1024 * 1024)
 const MAX_CONN_SECS = Number(process.env.MAX_CONN_SECS || 600)
-const SILENCE_MS = Number(process.env.SILENCE_MS || 1200)
-const EOU_GRACE_MS = Number(process.env.EOU_GRACE_MS || 300)
+// Shorter defaults to improve perceived latency; can be overridden by env
+const SILENCE_MS = Number(process.env.SILENCE_MS || 250)
+const EOU_GRACE_MS = Number(process.env.EOU_GRACE_MS || 75)
 
 const server = http.createServer((req, res) => {
   const url = new NodeURL(req.url || '/', `http://${req.headers.host || 'localhost'}`)
@@ -33,6 +35,7 @@ const server = http.createServer((req, res) => {
 })
 
 const wss = new WebSocketServer({ noServer: true })
+const speechClient = new SpeechClient()
 
 server.on('upgrade', (req, socket, head) => {
   const { url, headers } = req
@@ -74,6 +77,11 @@ wss.on('connection', (ws, req) => {
   let helloSeen = false
   let forwarded = false
   let silenceTimer = null
+  let sttStream = null
+  let sttActive = false
+  let sttLang = process.env.STT_LANG || 'ja-JP'
+  let sttEncoding = 'WEBM_OPUS'
+  let sttSampleRate = 48000
 
   function armSilenceTimer() {
     if (silenceTimer) clearTimeout(silenceTimer)
@@ -132,18 +140,31 @@ wss.on('connection', (ws, req) => {
       // try parse JSON control messages
       try {
         const obj = JSON.parse(s)
-        if (obj && obj.type === 'hello' || obj && obj.type === 'start') {
+        if (obj && (obj.type === 'hello' || obj.type === 'start')) {
           helloSeen = true
           ws.send(JSON.stringify({ type: 'ack', hello: true }))
+          // Optional STT params
+          if (obj.lang) sttLang = String(obj.lang)
+          if (obj.sampleRate) sttSampleRate = Number(obj.sampleRate)
+          if (obj.codec) {
+            const c = String(obj.codec).toLowerCase()
+            if (c.includes('opus') && c.includes('ogg')) sttEncoding = 'OGG_OPUS'
+            else if (c.includes('opus')) sttEncoding = 'WEBM_OPUS'
+          }
+          startStt()
           return
         }
         if (obj && obj.type === 'audio' && typeof obj.chunk === 'string') {
           const buf = Buffer.from(obj.chunk, 'base64')
           chunks.push(buf)
           armSilenceTimer()
+          if (sttActive && sttStream) {
+            try { sttStream.write({ audioContent: buf }) } catch {}
+          }
           return
         }
         if (obj && obj.type === 'eos') {
+          if (sttStream) { try { sttStream.end() } catch {} }
           void forwardAndRespond()
           return
         }
@@ -160,10 +181,44 @@ wss.on('connection', (ws, req) => {
         const buf = Buffer.from(ab)
         chunks.push(buf)
         armSilenceTimer()
+        if (sttActive && sttStream) {
+          try { sttStream.write({ audioContent: buf }) } catch {}
+        }
       } catch {}
       seq += 1
     }
   })
+
+  function startStt() {
+    if (sttActive) return
+    try {
+      const request = {
+        config: {
+          encoding: sttEncoding,
+          languageCode: sttLang,
+          sampleRateHertz: sttSampleRate,
+          enableAutomaticPunctuation: true,
+          useEnhanced: true,
+        },
+        interimResults: true,
+        singleUtterance: false,
+      }
+      sttStream = speechClient
+        .streamingRecognize(request)
+        .on('error', (e) => {
+          try { ws.send(JSON.stringify({ type: 'stt_error', error: String(e) })) } catch {}
+        })
+        .on('data', (data) => {
+          const results = data.results || []
+          for (const r of results) {
+            const alt = r.alternatives && r.alternatives[0] ? r.alternatives[0].transcript : ''
+            if (!alt) continue
+            try { ws.send(JSON.stringify({ type: r.isFinal ? 'stt_final' : 'stt_interim', text: alt })) } catch {}
+          }
+        })
+      sttActive = true
+    } catch {}
+  }
 
   async function forwardAndRespond() {
     if (forwarded) return
