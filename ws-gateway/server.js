@@ -8,14 +8,22 @@ import { WebSocketServer } from 'ws'
 /** env/config */
 const PORT = Number(process.env.PORT || 8080)
 const WS_PATH = process.env.WS_PATH || '/ws'
-const ORIGINS_A = (process.env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean)
-const ORIGINS_B = (process.env.ALLOWED_ORIGIN || '').split(',').map(s => s.trim()).filter(Boolean)
+// Normalize origins: trim and remove internal whitespace/newlines that may leak from env UI pastes
+const ORIGINS_A = (process.env.ALLOWED_ORIGINS || '')
+  .split(',')
+  .map(s => s.trim().replace(/\s+/g, ''))
+  .filter(Boolean)
+const ORIGINS_B = (process.env.ALLOWED_ORIGIN || '')
+  .split(',')
+  .map(s => s.trim().replace(/\s+/g, ''))
+  .filter(Boolean)
 const ALLOWED_ORIGIN = [...new Set([...ORIGINS_A, ...ORIGINS_B])]
 const IDLE_SEC = Number(process.env.IDLE_SEC || 45)
 const MAX_MSG_BYTES = Number(process.env.MAX_MSG_BYTES || 2 * 1024 * 1024)
 const REQUIRE_TOKEN = String(process.env.REQUIRE_TOKEN || 'false').toLowerCase() === 'true'
 const WS_TOKEN = process.env.WS_TOKEN || ''
-const CONVERSATION_URL = process.env.CONVERSATION_URL || ''
+// Normalize conversation URL to avoid newlines/whitespace breaking URL parsing
+const CONVERSATION_URL = (process.env.CONVERSATION_URL || '').replace(/\s+/g, '')
 const MAX_BYTES = Number(process.env.MAX_BYTES || 16 * 1024 * 1024)
 const MAX_CONN_SECS = Number(process.env.MAX_CONN_SECS || 600)
 // Shorter defaults to improve perceived latency; can be overridden by env

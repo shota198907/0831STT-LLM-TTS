@@ -56,17 +56,59 @@ export default function StreamingBoot({
         const qToken = params.get('token')
         const envOrigin = process.env.NEXT_PUBLIC_WS_ORIGIN ? String(process.env.NEXT_PUBLIC_WS_ORIGIN) : ''
         const envToken = process.env.NEXT_PUBLIC_WS_TOKEN ? String(process.env.NEXT_PUBLIC_WS_TOKEN) : ''
-        // URL selection: query param wins (as-is, full URL expected). Env appends /ws if missing.
-        let wsUrl: string
-        if (q) {
-          wsUrl = q
-        } else if (envOrigin) {
-          const trimmed = envOrigin.replace(/\/$/, '')
-          wsUrl = /\/ws(\/?$)/.test(trimmed) ? trimmed : `${trimmed}/ws`
-        } else {
-          // Fallback to internal Next.js WebSocket route (which will return 426 and trigger REST fallback)
-          wsUrl = `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/api/ws/conversation`
+
+        const guessProto = location.protocol === 'https:' ? 'wss:' : 'ws:'
+        const isValidWs = (u: string) => /^wss?:\/\/[\w\-_.:%\[\]~]+(?::\d+)?(\/.*)?$/i.test(u)
+        const normalize = (s: string): string | null => {
+          const raw = String(s || '').trim()
+          if (!raw) return null
+          if (/^wss?:\/\//i.test(raw)) {
+            return isValidWs(raw) ? raw : null
+          }
+          if (/^https?:\/\//i.test(raw)) {
+            try {
+              const u = new UrlCtor(raw)
+              const wsScheme = u.protocol === 'https:' ? 'wss:' : 'ws:'
+              return `${wsScheme}//${u.host}${u.pathname || ''}${u.search || ''}`
+            } catch {
+              return null
+            }
+          }
+          try {
+            const candidate = `${guessProto}//${raw}`
+            return isValidWs(candidate) ? candidate : null
+          } catch {
+            return null
+          }
         }
+
+        let wsUrl: string
+        let source: 'query' | 'env' | 'fallback' = 'fallback'
+        const qUrl = q ? normalize(q) : null
+        if (qUrl) { wsUrl = qUrl; source = 'query' }
+        else {
+          const envUrl = envOrigin ? normalize(envOrigin) : null
+          if (envUrl) { wsUrl = envUrl; source = 'env' }
+          else {
+            wsUrl = `${guessProto}//${location.host}/api/ws/conversation`
+            source = 'fallback'
+          }
+        }
+        try {
+          const u = new UrlCtor(wsUrl)
+          const needWsPath = !/\/ws(\/?$)/.test(u.pathname || '')
+          if (source !== 'fallback' && needWsPath) {
+            const path = (u.pathname && u.pathname !== '/') ? u.pathname : ''
+            wsUrl = `${u.protocol}//${u.host}${path}/ws${u.search || ''}`
+          }
+        } catch {}
+        if (!isValidWs(wsUrl)) {
+          log('Invalid WS URL; falling back', { attempted: wsUrl, q, envOrigin })
+          wsUrl = `${guessProto}//${location.host}/api/ws/conversation`
+          source = 'fallback'
+        }
+        log('WS url select', { source, url: wsUrl })
+
         const token = qToken || envToken || ''
         const subprotocol = token ? [token] : undefined
         const client = new StreamingClient(wsUrl, {
