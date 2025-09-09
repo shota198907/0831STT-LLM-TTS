@@ -1,14 +1,18 @@
 export const runtime = 'nodejs'
 
+// WebSocket API for Next.js - fallback to REST API response
 function okUpgrade(handler: (ws: WebSocket, req: Request) => void, request: Request): Response {
-  // @ts-ignore - WebSocketPair is available in Next runtime
-  const { 0: client, 1: server } = new WebSocketPair()
-  const ws = server as unknown as WebSocket
-  // @ts-ignore
-  ws.accept?.()
-  handler(ws, request)
-  // @ts-ignore
-  return new Response(null, { status: 101, webSocket: client }) as any
+  // Since WebSocketPair is not available in Next.js API routes,
+  // we'll return a 426 status indicating WebSocket upgrade is not supported
+  // and the client should fall back to REST API
+  return new Response('WebSocket not supported in this environment. Please use REST API or external WebSocket gateway.', { 
+    status: 426,
+    headers: {
+      'Content-Type': 'text/plain',
+      'Upgrade': 'websocket',
+      'Connection': 'Upgrade'
+    }
+  })
 }
 
 export async function GET(request: Request) {

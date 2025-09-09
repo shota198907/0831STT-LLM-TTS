@@ -1,0 +1,47 @@
+steps:
+  # Build the WebSocket Gateway container image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/ws-gateway:$COMMIT_SHA', '.']
+  
+  # Push the container image to Container Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/ws-gateway:$COMMIT_SHA']
+  
+  # Deploy WebSocket Gateway to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+    - 'run'
+    - 'deploy'
+    - 'ws-gateway'
+    - '--image'
+    - 'gcr.io/$PROJECT_ID/ws-gateway:$COMMIT_SHA'
+    - '--region'
+    - 'asia-northeast1'
+    - '--platform'
+    - 'managed'
+    - '--allow-unauthenticated'
+    - '--port'
+    - '8080'
+    - '--memory'
+    - '1Gi'
+    - '--cpu'
+    - '1'
+    - '--timeout'
+    - '300'
+    - '--concurrency'
+    - '1000'
+    - '--max-instances'
+    - '10'
+    - '--min-instances'
+    - '1'
+    - '--set-env-vars'
+    - 'PORT=8080,WS_PATH=/ws,IDLE_SEC=45,MAX_MSG_BYTES=2097152,REQUIRE_TOKEN=false,MAX_BYTES=16777216,MAX_CONN_SECS=600,SILENCE_MS=1200,EOU_GRACE_MS=300'
+
+substitutions:
+  _REGION: 'asia-northeast1'
+  _SERVICE_NAME: 'ws-gateway'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: 'E2_HIGHCPU_4'

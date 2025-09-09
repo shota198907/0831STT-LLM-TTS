@@ -17,9 +17,25 @@ Directory: `ws-gateway/`
   - Upgrade path/origin/token checks; ping/pong keepalive; idle close; 2MB message cap.
   - Echo/ping-pong PoC; logs JSON `{ evt:"close", code, reason, session_id, frames, bytes }` on close.
 - `Dockerfile`: Cloud Run ready.
-- `.dockerignore`: keeps image small.
+- `cloudbuild.yaml`: Cloud Build configuration for deployment.
+- `deploy-ws-gateway.sh`: Deployment script.
 
-Deploy the gateway to Cloud Run (allow unauth). Set `ALLOWED_ORIGIN=https://<next-app-url>` and optionally `min-instances=1`.
+### Deployment
+
+Deploy the gateway to Cloud Run:
+
+```bash
+# Set your project ID
+export PROJECT_ID=your-project-id
+
+# Deploy using the script
+./scripts/deploy-ws-gateway.sh
+
+# Or manually using gcloud
+gcloud builds submit --config ws-gateway/cloudbuild.yaml
+```
+
+Set `ALLOWED_ORIGIN=https://<next-app-url>` and optionally `min-instances=1`.
 
 ## Front-end WS selection
 

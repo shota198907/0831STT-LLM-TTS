@@ -64,14 +64,27 @@ export default function StreamingBoot({
           const trimmed = envOrigin.replace(/\/$/, '')
           wsUrl = /\/ws(\/?$)/.test(trimmed) ? trimmed : `${trimmed}/ws`
         } else {
-          wsUrl = `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//ws-gateway-886467077835.asia-northeast1.run.app/ws`
+          // Fallback to internal Next.js WebSocket route (which will return 426 and trigger REST fallback)
+          wsUrl = `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/api/ws/conversation`
         }
         const token = qToken || envToken || ''
         const subprotocol = token ? [token] : undefined
         const client = new StreamingClient(wsUrl, {
           onOpen: () => { log("WS open"); onWsStateChange?.('open') },
-          onClose: () => { log("WS close"); onWsStateChange?.('closed') },
-          onError: (e: any) => { log("WS error", e); onWsStateChange?.('error') },
+          onClose: (e: any) => { 
+            log("WS close", e); 
+            onWsStateChange?.('closed');
+            // If WebSocket fails, the app should fall back to REST API automatically
+            if (e?.code === 426) {
+              log("WebSocket not supported, falling back to REST API");
+            }
+          },
+          onError: (e: any) => { 
+            log("WS error", e); 
+            onWsStateChange?.('error');
+            // On WebSocket error, the app should fall back to REST API
+            log("WebSocket connection failed, falling back to REST API");
+          },
           onState: (s) => { onWsStateChange?.(s) },
           onText: (m: any) => {
             try {

@@ -1,8 +1,36 @@
+# syntax=docker/dockerfile:1
+
+# WebSocket Gateway Dockerfile
 FROM node:20-alpine
+
 WORKDIR /app
-COPY package.json package-lock.json* ./
-# lock が無くても進むように。失敗しても次で継続
-RUN npm ci --omit=dev || npm install --omit=dev
+
+# Install dependencies
+COPY package.json ./
+RUN npm install --production
+
+# Copy source code
 COPY server.js ./
+
+# Create non-root user
+RUN addgroup -S wsgateway && adduser -S wsgateway -G wsgateway
+
+# Install curl for healthcheck
+RUN apk add --no-cache curl
+
+# Set environment variables
+ENV NODE_ENV=production
+ENV PORT=8080
+
+# Change ownership
+RUN chown -R wsgateway:wsgateway /app
+USER wsgateway
+
 EXPOSE 8080
-CMD ["node","server.js"]
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+  CMD curl -fsS http://localhost:8080/healthz || exit 1
+
+CMD ["node", "server.js"]
+    
