@@ -26,6 +26,8 @@ const WS_TOKEN = process.env.WS_TOKEN || ''
 const CONVERSATION_URL = (process.env.CONVERSATION_URL || '').replace(/\s+/g, '')
 const MAX_BYTES = Number(process.env.MAX_BYTES || 16 * 1024 * 1024)
 const MAX_CONN_SECS = Number(process.env.MAX_CONN_SECS || 600)
+const GEMINI_API_KEY = (process.env.GEMINI_API_KEY || '').trim()
+const GEMINI_MODEL = (process.env.GEMINI_MODEL || 'gemini-1.5-flash').trim()
 // Shorter defaults to improve perceived latency; can be overridden by env
 const SILENCE_MS = Number(process.env.SILENCE_MS || 250)
 const EOU_GRACE_MS = Number(process.env.EOU_GRACE_MS || 75)
@@ -87,16 +89,28 @@ wss.on('connection', (ws, req) => {
   let silenceTimer = null
   let sttStream = null
   let sttActive = false
+  let sttPlanned = false
   let sttLang = process.env.STT_LANG || 'ja-JP'
   let sttEncoding = 'WEBM_OPUS'
   let sttSampleRate = 48000
+  let sttLastInterim = ''
+  let sttLastFinal = ''
+  let llmStarted = false
+  let llmDone = false
 
   function armSilenceTimer() {
     if (silenceTimer) clearTimeout(silenceTimer)
     silenceTimer = setTimeout(() => {
       if (!forwarded && chunks.length > 0) {
-        try { console.log(JSON.stringify({ evt: 'auto_forward', reason: 'silence', session_id: sessionId, frames, bytes })) } catch {}
-        forwardAndRespond().catch(() => {})
+        const text = (sttLastFinal && sttLastFinal.trim()) ? sttLastFinal : (sttLastInterim && sttLastInterim.trim()) ? sttLastInterim : ''
+        if (!llmStarted && text) {
+          llmStarted = true
+          try { console.log(JSON.stringify({ evt: 'auto_llm', reason: 'silence', session_id: sessionId, frames, bytes })) } catch {}
+          runLLMAndTTS(text).catch(() => {})
+          return
+        }
+        // Avoid forwarding small/silent buffers that cause REST no_speech; keep the session open for more audio
+        try { console.log(JSON.stringify({ evt: 'silence_hold', session_id: sessionId, frames, bytes, llmStarted })) } catch {}
       }
     }, SILENCE_MS)
   }
@@ -121,8 +135,10 @@ wss.on('connection', (ws, req) => {
   ws.on('close', async (code, reason) => {
     clearInterval(iv); clearInterval(idleTimer)
     try {
-      if (!forwarded && chunks.length > 0) {
-        await forwardAndRespond()
+      if (!llmStarted && !llmDone) {
+        const text = (sttLastFinal && sttLastFinal.trim()) ? sttLastFinal : (sttLastInterim && sttLastInterim.trim()) ? sttLastInterim : ''
+        if (text) { await runLLMAndTTS(text) }
+        else if (!forwarded && chunks.length > 0) { await forwardAndRespond() }
       }
     } catch {}
     try {
@@ -159,7 +175,7 @@ wss.on('connection', (ws, req) => {
             if (c.includes('opus') && c.includes('ogg')) sttEncoding = 'OGG_OPUS'
             else if (c.includes('opus')) sttEncoding = 'WEBM_OPUS'
           }
-          startStt()
+          sttPlanned = true // defer actual STT start until first audio chunk to allow container sniffing
           return
         }
         if (obj && obj.type === 'audio' && typeof obj.chunk === 'string') {
@@ -173,6 +189,10 @@ wss.on('connection', (ws, req) => {
         }
         if (obj && obj.type === 'eos') {
           if (sttStream) { try { sttStream.end() } catch {} }
+          if (!llmStarted) {
+            const text = (sttLastFinal && sttLastFinal.trim()) ? sttLastFinal : (sttLastInterim && sttLastInterim.trim()) ? sttLastInterim : ''
+            if (text) { llmStarted = true; void runLLMAndTTS(text); return }
+          }
           void forwardAndRespond()
           return
         }
@@ -187,6 +207,14 @@ wss.on('connection', (ws, req) => {
       try {
         const ab = data
         const buf = Buffer.from(ab)
+        // Lazy-start STT on first chunk with container sniff
+        if (!sttActive) {
+          try {
+            const enc = sniffEncoding(buf)
+            if (enc) sttEncoding = enc
+          } catch {}
+          if (sttPlanned) startStt()
+        }
         chunks.push(buf)
         armSilenceTimer()
         if (sttActive && sttStream) {
@@ -196,6 +224,20 @@ wss.on('connection', (ws, req) => {
       seq += 1
     }
   })
+
+  function sniffEncoding(buf) {
+    try {
+      if (!buf || buf.length < 12) return null
+      // OGG begins with "OggS"
+      if (buf[0] === 0x4F && buf[1] === 0x67 && buf[2] === 0x67 && buf[3] === 0x53) return 'OGG_OPUS'
+      // WebM (Matroska) starts with EBML header 0x1A45DFA3
+      if (buf[0] === 0x1A && buf[1] === 0x45 && buf[2] === 0xDF && buf[3] === 0xA3) return 'WEBM_OPUS'
+      // MP4 often starts with ftyp within first 12 bytes
+      const s = buf.toString('ascii', 4, 8)
+      if (s === 'ftyp') return 'ENCODING_UNSPECIFIED'
+    } catch {}
+    return null
+  }
 
   function startStt() {
     if (sttActive) return
@@ -222,6 +264,21 @@ wss.on('connection', (ws, req) => {
             const alt = r.alternatives && r.alternatives[0] ? r.alternatives[0].transcript : ''
             if (!alt) continue
             try { ws.send(JSON.stringify({ type: r.isFinal ? 'stt_final' : 'stt_interim', text: alt })) } catch {}
+            if (r.isFinal) {
+              sttLastFinal = alt
+              // Trigger LLM/TTS once per turn as soon as we have a final result
+              if (!llmStarted && alt.trim()) {
+                llmStarted = true
+                runLLMAndTTS(String(alt)).catch(() => {})
+              }
+            } else {
+              sttLastInterim = alt
+              // Early trigger on strong interim (sentence end or length threshold)
+              if (!llmStarted && (/[。．\.？！!?]\s*$/.test(alt) || alt.length >= 30)) {
+                llmStarted = true
+                runLLMAndTTS(String(alt)).catch(() => {})
+              }
+            }
           }
         })
       sttActive = true
@@ -312,6 +369,125 @@ wss.on('connection', (ws, req) => {
       ws.send(JSON.stringify({ type: 'result', result: { type: 'error', data: { status: 500, message: String(e) } } }))
     } finally {
       clearTimeout(to)
+    }
+  }
+
+  function buildTtsUrl() {
+    // Prefer explicit TTS_URL; else derive from CONVERSATION_URL host
+    const fromEnv = (process.env.TTS_URL || '').trim()
+    if (fromEnv) return fromEnv
+    try {
+      const u = new NodeURL(CONVERSATION_URL)
+      return new NodeURL('/api/tts', `${u.protocol}//${u.host}`).toString()
+    } catch {
+      return ''
+    }
+  }
+
+  async function runLLMAndTTS(userText) {
+    if (!GEMINI_API_KEY) {
+      try { ws.send(JSON.stringify({ type: 'result', result: { type: 'error', data: { status: 500, message: 'GEMINI_API_KEY not set' } } })) } catch {}
+      return
+    }
+    const sys = 'あなたは簡潔で丁寧な電話オペレーターです。最初の文を早めに出してください。'
+    const streamUrl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:streamGenerateContent?key=${GEMINI_API_KEY}`
+    const genBody = {
+      systemInstruction: { parts: [{ text: sys }] },
+      contents: [ { role: 'user', parts: [{ text: String(userText || '') }] } ],
+      generationConfig: { temperature: 0.6, topP: 0.9 },
+    }
+    const ttsUrl = buildTtsUrl()
+    let sentenceBuf = ''
+    let inflight = 0
+    let seqLocal = 0
+    const MAX_INFLIGHT = 2
+
+    const flushSentence = async (sentence) => {
+      const s = String(sentence || '').trim(); if (!s) return
+      try { ws.send(JSON.stringify({ type: 'ai_sentence', text: s })) } catch {}
+      while (inflight >= MAX_INFLIGHT) await delay(10)
+      inflight++
+      const mySeq = seqLocal++
+      ;(async () => {
+        try {
+          const tRes = await fetch(ttsUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: s }) })
+          if (!tRes.ok) throw new Error(`TTS failed: ${tRes.status}`)
+          const { mime, audioBase64 } = await tRes.json()
+          try { ws.send(JSON.stringify({ type: 'tts_chunk', seq: mySeq, eos: false, mime })) } catch {}
+          const bin = Buffer.from(String(audioBase64 || ''), 'base64')
+          try { ws.send(bin) } catch {}
+        } catch (e) {
+          try { ws.send(JSON.stringify({ type: 'tts_chunk', seq: mySeq, eos: false, error: String(e) })) } catch {}
+        } finally { inflight-- }
+      })()
+    }
+
+    try {
+      const llmRes = await fetch(streamUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(genBody) })
+      if (llmRes.ok && llmRes.body) {
+        const reader = llmRes.body.getReader()
+        const decoder = new TextDecoder()
+        let carry = ''
+        let done = false
+        while (!done) {
+          const { value, done: rdDone } = await reader.read()
+          if (rdDone) break
+          const chunk = decoder.decode(value, { stream: true })
+          carry += chunk
+          const lines = carry.split('\n')
+          carry = lines.pop() || ''
+          for (let line of lines) {
+            line = line.trim(); if (!line) continue
+            let payload = line; if (line.startsWith('data:')) payload = line.slice(5).trim()
+            if (payload === '[DONE]') { done = true; break }
+            try {
+              const obj = JSON.parse(payload)
+              const cands = obj.candidates || []
+              if (cands.length) {
+                const parts = (cands[0].content?.parts ?? [])
+                let delta = ''
+                for (const p of parts) if (typeof p.text === 'string') delta += p.text
+                if (delta) {
+                  try { ws.send(JSON.stringify({ type: 'ai_text_delta', text: delta })) } catch {}
+                  sentenceBuf += delta
+                  if (/[。．\.？！!?]\s*$/.test(sentenceBuf) || sentenceBuf.length >= 80) {
+                    await flushSentence(sentenceBuf)
+                    sentenceBuf = ''
+                  }
+                }
+              }
+            } catch {}
+          }
+        }
+        if (sentenceBuf.trim()) await flushSentence(sentenceBuf)
+        while (inflight > 0) await delay(10)
+        llmDone = true
+        try { ws.send(JSON.stringify({ type: 'ai_done' })) } catch {}
+      } else {
+        // Fallback single-shot generate
+        const genUrl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`
+        const genRes = await fetch(genUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(genBody) })
+        if (genRes.ok) {
+          const j = await genRes.json()
+          const cands = j.candidates || []
+          const parts = (cands[0]?.content?.parts ?? [])
+          const full = parts.map((p) => p.text || '').join('')
+          const text = full || '(無応答)'
+          try { ws.send(JSON.stringify({ type: 'ai_sentence', text })) } catch {}
+          const tRes = await fetch(buildTtsUrl(), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) })
+          if (tRes.ok) {
+            const { mime, audioBase64 } = await tRes.json()
+            try { ws.send(JSON.stringify({ type: 'tts_chunk', seq: 0, eos: true, mime })) } catch {}
+            const bin = Buffer.from(String(audioBase64 || ''), 'base64')
+            try { ws.send(bin) } catch {}
+          }
+          try { ws.send(JSON.stringify({ type: 'ai_done' })) } catch {}
+        } else {
+          try { ws.send(JSON.stringify({ type: 'ai_done', error: 'llm_error' })) } catch {}
+        }
+      }
+    } catch (e) {
+      try { ws.send(JSON.stringify({ type: 'ai_done', error: String(e) })) } catch {}
     }
   }
 })

@@ -22,16 +22,30 @@ export function useWebRTCAudio({ onAudioData, onError }: WebRTCAudioOptions) {
 
   const initializeAudio = useCallback(async (): Promise<{ stream: MediaStream; audioContext: AudioContext }> => {
     try {
+      // Allow overriding constraints via query params for diagnostics: aec, ns, agc, deviceId
+      const sp = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : undefined
+      const flag = (k: string, def: boolean) => {
+        const v = sp?.get(k)
+        if (v == null) return def
+        return /^(1|true|on|yes)$/i.test(v)
+      }
+      const aec = flag('aec', true)
+      const ns = flag('ns', true)
+      const agc = flag('agc', true)
+      const deviceId = sp?.get('deviceId') || sp?.get('mic') || undefined
 
-      const stream = await navigator.mediaDevices.getUserMedia({
+      const constraints: any = {
         audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
+          echoCancellation: aec,
+          noiseSuppression: ns,
+          autoGainControl: agc,
           sampleRate: 48000,
           channelCount: 1,
         },
-      })
+      }
+      if (deviceId) constraints.audio.deviceId = { exact: deviceId }
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints)
       const trackSettings = stream.getAudioTracks()[0]?.getSettings()
       debugLog("WebRTC", "stream_settings", trackSettings)
 

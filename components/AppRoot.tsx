@@ -226,7 +226,8 @@ export default function AppRoot() {
   const handleMaxDurationReached = useCallback(async () => { log("Maximum speech duration reached - forcing stop"); await stopRecordingAndVAD("max_duration"); log("Recording stopped due to max duration") }, [stopRecordingAndVAD, log])
 
   const vadSilenceThreshold = Number(process.env.NEXT_PUBLIC_VAD_SILENCE_THRESHOLD ?? 1.2)
-  const vadVolumeThreshold = Number(process.env.NEXT_PUBLIC_VAD_VOLUME_THRESHOLD ?? 0.03)
+  // Lower default volume threshold to make speech detection less strict
+  const vadVolumeThreshold = Number(process.env.NEXT_PUBLIC_VAD_VOLUME_THRESHOLD ?? 0.01)
   log("VAD thresholds", { silence: vadSilenceThreshold, volume: vadVolumeThreshold }, "debug")
   const silenceGraceMs = Number(process.env.NEXT_PUBLIC_SILENCE_GRACE_MS ?? 3000)
 
@@ -269,7 +270,8 @@ export default function AppRoot() {
 
   const { start: startStreamRec, stop: stopStreamRec } = useAudioStreaming({
     getStream: () => streamRefLatest.current ?? stream ?? null,
-    timesliceMs: 200,
+    // Slightly longer chunk helps container/page boundaries for streaming STT
+    timesliceMs: 500,
     onChunk: (buf) => {
       try {
         if (captureModeRef.current === 'ws') {
@@ -355,7 +357,14 @@ export default function AppRoot() {
         if (currentContext.state !== 'running') { log("AudioContext not running, skipping VAD start", { state: currentContext.state }); isCapturingRef.current = false; return }
 
         const recStart = performance.now(); log("Starting recording and VAD based on conversation state", { forceStreamAll })
-        if ((streamingEnabled || forceStreamAll) && wsOpenRef.current) {
+        const opusSupported = (() => {
+          try {
+            const M: any = (window as any).MediaRecorder
+            if (!M || typeof M.isTypeSupported !== 'function') return false
+            return M.isTypeSupported('audio/webm;codecs=opus') || M.isTypeSupported('audio/ogg;codecs=opus')
+          } catch { return false }
+        })()
+        if ((streamingEnabled || forceStreamAll) && wsOpenRef.current && opusSupported) {
           try { wsClientRef.current?.send({ type: 'start', sessionId: callIdRef.current || 's', sampleRate: currentContext.sampleRate, lang: 'ja-JP', codec: 'opus' }) } catch {}
           captureModeRef.current = 'ws'
           sentFramesRef.current = 0
@@ -369,6 +378,7 @@ export default function AppRoot() {
           }
           await startStreamRec()
         } else {
+          if (!opusSupported) { log('Streaming disabled: opus container not supported (using REST)') }
           captureModeRef.current = 'rest'
           if (sentTickerRef.current) { clearInterval(sentTickerRef.current); sentTickerRef.current = null }
           await RecorderSoT.start("flow_listening")

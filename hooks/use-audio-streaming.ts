@@ -16,11 +16,12 @@ export function useAudioStreaming({ getStream, timesliceMs = 200, onChunk }: Use
 
   const pickMime = () => {
     try {
+      // Prefer OGG Opus first; in practice some browsers produce chunks that STT handles better with OGG
       const cands = [
-        "audio/webm;codecs=opus",
         "audio/ogg;codecs=opus",
-        "audio/mp4",
+        "audio/webm;codecs=opus",
         "audio/webm",
+        "audio/mp4",
       ]
       for (const m of cands) {
         if ((window as any).MediaRecorder && MediaRecorder.isTypeSupported(m)) return m
