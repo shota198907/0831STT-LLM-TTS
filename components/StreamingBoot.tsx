@@ -16,6 +16,10 @@ type Props = {
   firstChunkLoggedRef: React.MutableRefObject<boolean>
   setAiSpeaking: () => void
   onWsStateChange?: (s: 'connecting' | 'open' | 'closed' | 'error') => void
+  onSttInterim?: (text: string) => void
+  onSttFinal?: (text: string) => void
+  onAiDelta?: (text: string) => void
+  onAiSentence?: (text: string) => void
 }
 
 export default function StreamingBoot({
@@ -31,6 +35,10 @@ export default function StreamingBoot({
   firstChunkLoggedRef,
   setAiSpeaking,
   onWsStateChange,
+  onSttInterim,
+  onSttFinal,
+  onAiDelta,
+  onAiSentence,
 }: Props) {
   useEffect(() => {
     if (!enabled || !audioContext) return
@@ -130,7 +138,14 @@ export default function StreamingBoot({
           onState: (s) => { onWsStateChange?.(s) },
           onText: (m: any) => {
             try {
+              if (m.type === 'stt_interim') { onSttInterim?.(m.text); return }
+              if (m.type === 'stt_final') { onSttFinal?.(m.text); return }
+              if (m.type === 'ai_text_delta') {
+                onAiDelta?.(m.text)
+                return
+              }
               if (m.type === "ai_sentence") {
+                onAiSentence?.(m.text)
                 addMessage("ai", m.text)
                 setAiSpeaking()
                 clearAllTimeouts()
@@ -182,7 +197,7 @@ export default function StreamingBoot({
       }
     })()
     return () => { cancelled = true }
-  }, [enabled, audioContext, onAllDrained, addMessage, clearAllTimeouts, log, wsClientRef, audioQueueRef, firstChunkLoggedRef, setAiSpeaking, onWsStateChange])
+    }, [enabled, audioContext, onFirstPlayStart, onAllDrained, addMessage, clearAllTimeouts, log, wsClientRef, audioQueueRef, firstChunkLoggedRef, setAiSpeaking, onWsStateChange, onSttInterim, onSttFinal, onAiDelta, onAiSentence])
 
   return null
 }

@@ -37,6 +37,8 @@ type CallState = "idle" | "connecting" | "connected" | "ai-speaking" | "user-spe
 export default function AppRoot() {
   const [callState, setCallState] = useState<CallState>("idle")
   const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [partialUserText, setPartialUserText] = useState("")
+  const [partialAiText, setPartialAiText] = useState("")
   const [showVADMonitor, setShowVADMonitor] = useState(false)
   const [maxSpeechDuration] = useState(30)
   const endCallRef = useRef<(reason: CallEndReason | "user" | "error") => void>(null)
@@ -104,6 +106,23 @@ export default function AppRoot() {
     log("Call ended by conversation flow", { reason })
     endCallRef.current?.(reason)
   }, [log])
+
+  const handleSttInterim = useCallback((text: string) => {
+    setPartialUserText(text)
+  }, [])
+
+  const handleSttFinal = useCallback((text: string) => {
+    setPartialUserText("")
+    addMessage("user", text)
+  }, [addMessage])
+
+  const handleAiDelta = useCallback((delta: string) => {
+    setPartialAiText((prev) => prev + delta)
+  }, [])
+
+  const handleAiSentence = useCallback((text: string) => {
+    setPartialAiText("")
+  }, [])
 
   const {
     state: conversationState,
@@ -197,7 +216,7 @@ export default function AppRoot() {
   const stopRecordingAndVAD = useCallback(async (reason: string = "manual") => {
     clearSpeechEndTimer(); stopListening()
     if (streamingEnabled) {
-      try { wsClientRef.current?.send({ type: 'end' }) } catch {}
+      try { wsClientRef.current?.send({ type: 'eos' }) } catch {}
       try { await stopStreamRec() } catch {}
     } else { await RecorderSoT.stop(reason) }
     stopVADRef.current(reason)
@@ -270,8 +289,8 @@ export default function AppRoot() {
 
   const { start: startStreamRec, stop: stopStreamRec } = useAudioStreaming({
     getStream: () => streamRefLatest.current ?? stream ?? null,
-    // Slightly longer chunk helps container/page boundaries for streaming STT
-    timesliceMs: 500,
+    // Use ~200ms chunks to keep latency low while preserving container headers
+    timesliceMs: 200,
     onChunk: (buf) => {
       try {
         if (captureModeRef.current === 'ws') {
@@ -349,9 +368,35 @@ export default function AppRoot() {
         turnIdRef.current = (typeof crypto !== 'undefined' && 'randomUUID' in crypto) ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`
 
         let currentStream = stream; let currentContext = audioContext
-        if (!currentStream || !currentContext) {
-          try { const result = await initializeAudio(); currentStream = result.stream; currentContext = result.audioContext; log("Reinitialized audio for listening") }
-          catch (err) { log("Failed to reinitialize audio", err); isCapturingRef.current = false; return }
+        let track = currentStream?.getAudioTracks()[0]
+        if (
+          !currentStream ||
+          !currentContext ||
+          !track ||
+          track.readyState !== "live" ||
+          track.muted
+        ) {
+          try {
+            const result = await initializeAudio()
+            currentStream = result.stream
+            currentContext = result.audioContext
+            track = currentStream.getAudioTracks()[0]
+            log("Reinitialized audio for listening", {
+              reason: !currentStream
+                ? "no_stream"
+                : !currentContext
+                  ? "no_context"
+                  : !track
+                    ? "no_track"
+                    : track.readyState !== "live"
+                      ? "track_not_live"
+                      : "track_muted",
+            })
+          } catch (err) {
+            log("Failed to reinitialize audio", err)
+            isCapturingRef.current = false
+            return
+          }
         }
         await ensureAudioContextRunning(currentContext)
         if (currentContext.state !== 'running') { log("AudioContext not running, skipping VAD start", { state: currentContext.state }); isCapturingRef.current = false; return }
@@ -444,6 +489,10 @@ export default function AppRoot() {
           firstChunkLoggedRef={firstChunkLoggedRef}
           setAiSpeaking={() => setCallState("ai-speaking")}
           onWsStateChange={(s) => { wsOpenRef.current = (s === 'open') }}
+          onSttInterim={handleSttInterim}
+          onSttFinal={handleSttFinal}
+          onAiDelta={handleAiDelta}
+          onAiSentence={handleAiSentence}
         />
       )}
 
@@ -527,14 +576,32 @@ export default function AppRoot() {
               {messages.length === 0 ? (
                 <p className="text-muted-foreground text-center py-8">通話を開始すると会話が表示されます</p>
               ) : (
-                messages.map((message) => (
-                  <div key={message.id} className={`flex ${message.type === "user" ? "justify-end" : "justify-start"}`}>
-                    <div className={`max-w-xs px-4 py-2 rounded-lg ${message.type === "user" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>
-                      <p className="text-sm">{message.content}</p>
-                      <p className="text-xs opacity-70 mt-1">{message.timestamp.toLocaleTimeString("ja-JP")}</p>
+                <>
+                  {messages.map((message) => (
+                    <div key={message.id} className={`flex ${message.type === "user" ? "justify-end" : "justify-start"}`}>
+                      <div className={`max-w-xs px-4 py-2 rounded-lg ${message.type === "user" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>
+                        <p className="text-sm">{message.content}</p>
+                        <p className="text-xs opacity-70 mt-1">{message.timestamp.toLocaleTimeString("ja-JP")}</p>
+                      </div>
                     </div>
-                  </div>
-                ))
+                  ))}
+                  {partialAiText && (
+                    <div className="flex justify-start" key="__partial_ai">
+                      <div className="max-w-xs px-4 py-2 rounded-lg bg-muted text-muted-foreground italic opacity-70">
+                        <p className="text-sm">{partialAiText}</p>
+                        <p className="text-xs opacity-70 mt-1">AI応答生成中...</p>
+                      </div>
+                    </div>
+                  )}
+                  {partialUserText && (
+                    <div className="flex justify-end" key="__partial">
+                      <div className="max-w-xs px-4 py-2 rounded-lg bg-primary/40 text-primary-foreground italic opacity-70">
+                        <p className="text-sm">{partialUserText}</p>
+                        <p className="text-xs opacity-70 mt-1">音声入力中...</p>
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </CardContent>

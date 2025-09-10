@@ -91,12 +91,23 @@ wss.on('connection', (ws, req) => {
   let sttActive = false
   let sttPlanned = false
   let sttLang = process.env.STT_LANG || 'ja-JP'
+  const ENCODING_MIME = {
+    OGG_OPUS: 'audio/ogg;codecs=opus',
+    WEBM_OPUS: 'audio/webm;codecs=opus',
+  }
   let sttEncoding = 'WEBM_OPUS'
+  let sttMime = ENCODING_MIME[sttEncoding]
   let sttSampleRate = 48000
   let sttLastInterim = ''
   let sttLastFinal = ''
   let llmStarted = false
   let llmDone = false
+
+  function setSttFormat(enc) {
+    if (!enc) return
+    sttEncoding = enc
+    sttMime = ENCODING_MIME[enc] || sttMime
+  }
 
   function armSilenceTimer() {
     if (silenceTimer) clearTimeout(silenceTimer)
@@ -172,8 +183,8 @@ wss.on('connection', (ws, req) => {
           if (obj.sampleRate) sttSampleRate = Number(obj.sampleRate)
           if (obj.codec) {
             const c = String(obj.codec).toLowerCase()
-            if (c.includes('opus') && c.includes('ogg')) sttEncoding = 'OGG_OPUS'
-            else if (c.includes('opus')) sttEncoding = 'WEBM_OPUS'
+            if (c.includes('opus') && c.includes('ogg')) setSttFormat('OGG_OPUS')
+            else if (c.includes('opus')) setSttFormat('WEBM_OPUS')
           }
           sttPlanned = true // defer actual STT start until first audio chunk to allow container sniffing
           return
@@ -211,7 +222,7 @@ wss.on('connection', (ws, req) => {
         if (!sttActive) {
           try {
             const enc = sniffEncoding(buf)
-            if (enc) sttEncoding = enc
+            if (enc) setSttFormat(enc)
           } catch {}
           if (sttPlanned) startStt()
         }
@@ -293,8 +304,9 @@ wss.on('connection', (ws, req) => {
     const started = Date.now()
     const webm = Buffer.concat(chunks)
     chunks = []
+    const mime = sttMime
     // log forwarding
-    try { console.log(JSON.stringify({ evt: 'forward', forwarded_to: '/api/conversation', session_id: sessionId, frames, bytes })) } catch {}
+    try { console.log(JSON.stringify({ evt: 'forward', forwarded_to: '/api/conversation', session_id: sessionId, frames, bytes, mime })) } catch {}
     if (!CONVERSATION_URL) {
       ws.send(JSON.stringify({ type: 'result', result: { type: 'error', data: { status: 500, message: 'CONVERSATION_URL not set' } } }))
       try { ws.close(1011, 'config') } catch {}
@@ -302,9 +314,9 @@ wss.on('connection', (ws, req) => {
     }
     // Build JSON request body (matches existing Next API: { audioBase64, mimeType, messages })
     const audioBase64 = webm.toString('base64')
-    const body = JSON.stringify({ audioBase64, mimeType: 'audio/webm;codecs=opus', messages: [] })
+    const body = JSON.stringify({ audioBase64, mimeType: mime, messages: [] })
     const ct = 'application/json'
-    try { console.log(JSON.stringify({ evt: 'conv_req_probe', ct, len: (body && body.length) || null })) } catch {}
+    try { console.log(JSON.stringify({ evt: 'conv_req_probe', ct, len: (body && body.length) || null, mime })) } catch {}
     const ctrl = new AbortController()
     const to = setTimeout(() => ctrl.abort(), 60_000)
     try {
