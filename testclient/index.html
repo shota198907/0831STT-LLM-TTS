@@ -1,0 +1,28 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Live Gateway Test</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 20px; }
+    button { margin-right: 8px; }
+    #log { white-space: pre-wrap; background: #111; color: #0f0; padding: 10px; height: 280px; overflow: auto; }
+    #status { margin: 8px 0; }
+  </style>
+</head>
+<body>
+  <h1>Live Gateway Test</h1>
+  <div>
+    <button id="btnConnect">Connect</button>
+    <button id="btnStart">Start</button>
+    <button id="btnPing">Ping</button>
+    <button id="btnEnd">End</button>
+  </div>
+  <div id="status">status: -</div>
+  <div id="corr">corr_id: -</div>
+  <div id="log"></div>
+
+  <script src="/test.js"></script>
+</body>
+</html>

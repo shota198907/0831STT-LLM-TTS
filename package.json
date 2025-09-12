@@ -9,6 +9,10 @@
   },
   "dependencies": {
     "dotenv": "^16.6.1",
+    "google-auth-library": "^10.3.0",
     "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "wscat": "^6.1.0"
   }
 }
