@@ -20,24 +20,52 @@ const {
   WS_TOKEN = "",
   LIVE_RESPONSE_MODALITIES = "TEXT",
   LIVE_ENABLE_INPUT_TRANSCRIPTION = "true",
+  HTTP_LOG = "false",
+  // PR#1 Hardened controls
+  ALLOW_NO_ORIGIN = "false",
+  ALLOW_QUERY_TOKEN = "false",
+  WS_IDLE_TIMEOUT_SEC = "120",
+  WS_MAX_PAYLOAD = "1048576", // 1 MiB
+  WS_ENABLE_DEFLATE = "true",
 } = process.env;
 
 const allowedOrigins = new Set(
   WS_ALLOWED_ORIGINS.split(",").map(s => s.trim()).filter(Boolean)
 );
 
-// 1行JSONの簡易ロガー（PII禁止）
-const logStream = fs.createWriteStream("gateway.log", { flags: "a" });
-// TODO(sn): log rotation by size/day; integrate with external logger if needed.
-function logEvent(obj) {
+function maskSecrets(obj) {
   try {
-    logStream.write(JSON.stringify({ ts: Date.now(), ...obj }) + "\n");
+    const SENSITIVE = /^(token|authorization|api[_-]?key)$/i;
+    const out = Array.isArray(obj) ? [] : {};
+    for (const [k, v] of Object.entries(obj || {})) {
+      if (typeof v === "object" && v !== null) {
+        out[k] = maskSecrets(v);
+      } else if (SENSITIVE.test(k)) {
+        out[k] = "***";
+      } else {
+        out[k] = v;
+      }
+    }
+    return out;
+  } catch { return obj; }
+}
+
+// 1行JSON構造化ログ（STDOUT）。PII/シークレットはマスク。
+function logEvent(obj, level = "info") {
+  try {
+    const line = { ts: new Date().toISOString(), level, ...maskSecrets(obj) };
+    if (level === "error") console.error(JSON.stringify(line));
+    else console.log(JSON.stringify(line));
   } catch {}
 }
 
 const server = http.createServer((req, res) => {
+  if (HTTP_LOG === "true") {
+    try { console.log(`[HTTP] ${req.method} ${req.url}`); } catch {}
+  }
   // Health endpoints (Cloud Run 用: 常時 200 OK)
-  if (req.url === "/livez" || req.url === "/healthz") {
+  const path = (req.url || "").split("?")[0];
+  if (path === "/livez" || path === "/healthz" || path === "/health" || path === "/readyz" || path === "/_ah/health") {
     res.writeHead(200, { "content-type": "text/plain" });
     res.end("ok");
     return;
@@ -63,12 +91,29 @@ const server = http.createServer((req, res) => {
 });
 
 
-const wss = new WebSocketServer({ noServer: true });
+function chooseProtocol(protocols) {
+  // Choose first of [token=..., bearer:...], else undefined
+  if (!Array.isArray(protocols)) return undefined;
+  for (const p of protocols) {
+    const s = String(p || "").trim();
+    if (s.startsWith("token=")) return s;
+    if (s.toLowerCase().startsWith("bearer:")) return s; // note: includes opaque
+  }
+  return undefined;
+}
+
+const wss = new WebSocketServer({
+  noServer: true,
+  perMessageDeflate: WS_ENABLE_DEFLATE !== "false",
+  maxPayload: Number(WS_MAX_PAYLOAD) || 1024 * 1024,
+  handleProtocols: (protocols /*, request */) => chooseProtocol(protocols) || false,
+});
 
 wss.on("connection", (ws, request) => {
   const cid = randomUUID();
   ws.isAlive = true;
   ws.on("pong", () => { ws.isAlive = true; });
+  ws.lastSeen = Date.now();
 
   /** クライアント1接続あたりの上流ブリッジ（必要時のみ接続） */
   let bridge = null;
@@ -98,6 +143,7 @@ wss.on("connection", (ws, request) => {
   }
 
   ws.on("message", (data) => {
+    ws.lastSeen = Date.now();
     let msg;
     try {
       msg = JSON.parse(data.toString());
@@ -232,24 +278,29 @@ wss.on("connection", (ws, request) => {
         break;
 
       default:
-        sendJson({ type: "echo", data: msg });
+        // 未知typeはエラー応答（デバッグ用のエコーは廃止）
+        sendJson({ type: "error", error: "unknown_type" });
     }
   });
 
   ws.on("error", (err) => {
-    console.error(`[WS] error cid=${cid}`, err);
-    logEvent({ corr_id: cid, event: "ws_error", error: err?.message || String(err) });
+    logEvent({ corr_id: cid, evt: "ws_error", error: err?.message || String(err) }, "error");
   });
 
   ws.on("close", () => {
     try { bridge?.close(); } catch {}
     if (appKeepalive) clearInterval(appKeepalive);
-    logEvent({ corr_id: cid, event: "ws_close" });
+    logEvent({ corr_id: cid, evt: "ws_close" });
   });
 });
 
 server.on("upgrade", (req, socket, head) => {
   const origin = req.headers.origin;
+  if (!origin && ALLOW_NO_ORIGIN !== "true") {
+    socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
+    socket.destroy();
+    return;
+  }
   if (origin && !allowedOrigins.has(origin)) {
     socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
     socket.destroy();
@@ -261,19 +312,29 @@ server.on("upgrade", (req, socket, head) => {
     socket.destroy();
     return;
   }
-  if (REQUIRE_WS_TOKEN === "true") {
-    const headerToken = req.headers["x-ws-token"]; // case-insensitive
-    const queryToken = typeof query?.token === 'string' ? query.token : undefined;
-    const provided = (Array.isArray(headerToken) ? headerToken[0] : headerToken) || queryToken || "";
-    const expected = WS_TOKEN || "";
-    if (!expected || provided !== expected) {
-      // 認証失敗（秘密値はログ出力しない）
-      try { logEvent({ event: "auth_fail", remote: req.socket?.remoteAddress || "" }); } catch {}
-      socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
-      socket.destroy();
-      return;
+  // 認証: サブプロトコル優先、次にヘッダ、最後に（許可時のみ）クエリ
+  const sspRaw = String(req.headers["sec-websocket-protocol"] || "");
+  const ssp = sspRaw.split(",").map(s => s.trim()).filter(Boolean);
+  const tokenFromSSP = (() => {
+    for (const p of ssp) {
+      if (p.startsWith("token=")) return p.slice(6);
+      if (p.toLowerCase().startsWith("bearer:")) return p.slice(7);
     }
+    return "";
+  })();
+  const headerTokenRaw = req.headers["x-ws-token"]; // case-insensitive
+  const headerToken = Array.isArray(headerTokenRaw) ? headerTokenRaw[0] : headerTokenRaw;
+  const queryToken = ALLOW_QUERY_TOKEN === "true" && typeof query?.token === "string" ? query.token : undefined;
+  const provided = tokenFromSSP || headerToken || queryToken || "";
+  const expected = WS_TOKEN || "";
+  if (REQUIRE_WS_TOKEN === "true" && (!expected || !provided || provided !== expected)) {
+    logEvent({ evt: "auth_fail", remote: req.socket?.remoteAddress || "", origin: origin || "" });
+    socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+    socket.destroy();
+    return;
   }
+
+  // ここで wss がサブプロトコル選択を行う（handleProtocols）。
   wss.handleUpgrade(req, socket, head, (ws) => {
     wss.emit("connection", ws, req);
   });
@@ -284,6 +345,10 @@ const interval = setInterval(() => {
     if (!ws.isAlive) { ws.terminate(); continue; }
     ws.isAlive = false;
     ws.ping();
+    const idle = Number(WS_IDLE_TIMEOUT_SEC) || 120;
+    if (idle > 0 && Date.now() - (ws.lastSeen || 0) > idle * 1000) {
+      try { ws.close(1001, "idle_timeout"); } catch {}
+    }
   }
 }, 15000);
 wss.on("close", () => clearInterval(interval));
@@ -291,3 +356,23 @@ wss.on("close", () => clearInterval(interval));
 server.listen(Number(PORT), () => {
   console.log(`[HTTP] listening on :${PORT} (origins: ${[...allowedOrigins].join(", ")})`);
 });
+
+// Graceful shutdown (SIGTERM/SIGINT)
+function shutdown() {
+  try {
+    logEvent({ evt: "shutdown_start" });
+    server.close(() => {
+      try { for (const ws of wss.clients) ws.close(1001, "gateway_shutdown"); } catch {}
+      logEvent({ evt: "shutdown_complete" });
+      process.exit(0);
+    });
+    setTimeout(() => {
+      logEvent({ evt: "shutdown_forced" }, "error");
+      process.exit(0);
+    }, 5000).unref();
+  } catch {
+    process.exit(0);
+  }
+}
+process.on("SIGTERM", shutdown);
+process.on("SIGINT", shutdown);

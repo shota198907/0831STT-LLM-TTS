@@ -14,6 +14,12 @@
 <body>
   <h1>Live Gateway Test</h1>
   <div>
+    <input id="token" placeholder="token (opaque)" style="width: 280px;"/>
+    <select id="authMode">
+      <option value="token">subproto token=</option>
+      <option value="bearer">subproto bearer:</option>
+      <option value="header">header X-WS-Token</option>
+    </select>
     <button id="btnConnect">Connect</button>
     <button id="btnStart">Start</button>
     <button id="btnPing">Ping</button>
