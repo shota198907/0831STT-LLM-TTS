@@ -14,15 +14,19 @@ Live Gateway (MVP)
   - または ADC（サービスアカウント等）を使用（`GOOGLE_APPLICATION_CREDENTIALS` など）
  - タイムアウト:
    - `LIVE_READY_TIMEOUT_MS`: `upstream_ready` 到達待ちのタイムアウト（ms）。超過時は echo にフォールバック。
- - WSトークンゲート（任意）:
-   - `REQUIRE_WS_TOKEN=true|false`（既定 false）、`WS_TOKEN` を設定。
-   - Upgrade 前に `X-WS-Token` または `?token=` を検証。不一致は HTTP 401 で拒否（ログに `event:"auth_fail"`）。
+- WS 認証（本番推奨: 必須化）:
+  - `REQUIRE_WS_TOKEN=true|false`（既定 false）、`WS_TOKEN` を設定。
+  - ブラウザ: `Sec-WebSocket-Protocol` に `token=<opaque>` または `bearer:<opaque>` を付与。
+  - サーバ間: 上記サブプロトコルに加え `X-WS-Token` ヘッダも許可。
+  - `ALLOW_QUERY_TOKEN=true` のときのみ `?token=` を許可（デバッグ専用）。
+  - 不一致/欠如時は HTTP 401（ログに `evt:"auth_fail"`）。
 
 `.env.example` を参照してください。
 
 注意（Originの許可範囲）
 - `WS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8080` は開発時向けの例です。デプロイ時は必要最小限のオリジンに絞ってください。
--
+ - `ALLOW_NO_ORIGIN=false` の場合、`Origin` ヘッダが無い接続は拒否されます（非ブラウザ用途は true を検討）。
+ 
 テストページ `/test` の提供は `ENABLE_TEST_CLIENT=true` のときのみ有効です（既定は無効）。本番では必ず無効にしてください。
 
 HTTP
@@ -54,16 +58,16 @@ Live接続失敗時の挙動
     - `upstream_error`: ソケットレベルのエラー（`message` を付与）
     - `live_connect_failed` with `detail: "ready_timeout=<ms>`: `upstream_ready` 未到達（`LIVE_READY_TIMEOUT_MS` 既定 8000）
 
-ログ（gateway.log）
-- 1行JSONで主要イベントを出力（PII無し）。例:
-  - {"ts":..., "corr_id":"...", "event":"ack", "upstream":"live"}
-  - {"ts":..., "corr_id":"...", "event":"client_audio", "bytes_in":4096}
-  - {"ts":..., "corr_id":"...", "event":"server_audio", "bytes_out":8192}
+ログ（STDOUT 構造化JSON）
+- 1行 JSON を STDOUT/STDERR に出力（敏感情報は自動マスク）。例:
+  - {"ts":..., "level":"info", "corr_id":"...", "evt":"ack", "upstream":"live"}
+  - {"ts":..., "level":"info", "corr_id":"...", "evt":"client_audio", "bytes_in":4096}
+  - {"ts":..., "level":"error", "evt":"shutdown_forced"}
 
 動作確認
 - 起動: `npm run dev`
 - ヘルス: `curl -i http://localhost:$PORT/healthz`
-- WebSocket: `wscat -H "Origin: http://localhost:3000" -c ws://localhost:$PORT/ws`
+- WebSocket: `wscat -H "Origin: http://localhost:3000" -s "token=$WS_TOKEN" -c ws://localhost:$PORT/ws`
   - `{"type":"start"}` → `ack` と `status:ready`
   - `{"type":"ping"}` → `{"type":"pong",...}`
   - `{"type":"end_call"}` → close(1000)

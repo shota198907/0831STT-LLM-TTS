@@ -149,8 +149,23 @@
     if (ws && ws.readyState === WebSocket.OPEN) return;
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     const url = `${proto}://${location.host}/ws`;
-    ws = new WebSocket(url);
-    ws.onopen = () => { pushState('connected'); log('ws open'); };
+    const token = document.getElementById('token').value.trim();
+    const mode = document.getElementById('authMode').value;
+    const headers = {};
+    let subprotocols = [];
+    if (token) {
+      if (mode === 'token') subprotocols = [`token=${token}`];
+      else if (mode === 'bearer') subprotocols = [`bearer:${token}`];
+      else if (mode === 'header') headers['X-WS-Token'] = token; // non-browser clients only; kept for parity
+    }
+    try {
+      // Browser WebSocket cannot set arbitrary headers; only subprotocols.
+      ws = new WebSocket(url, subprotocols);
+    } catch (e) {
+      log('WebSocket init error: ' + e.message);
+      return;
+    }
+    ws.onopen = () => { pushState('connected'); log('ws open; protocol=' + (ws.protocol || '-')); };
     ws.onclose = (ev) => { setStatus('closed'); log(`ws close code=${ev.code} reason=${ev.reason}`); stopMic(); };
     ws.onerror = (ev) => { log('ws error'); };
     ws.onmessage = (ev) => {
