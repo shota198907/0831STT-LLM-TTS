@@ -83,3 +83,18 @@ Live接続失敗時の挙動
   - クライアント→上流: `type:"audio"` で BASE64 PCM16 を送信
   - 上流→クライアント: バイナリ＝音声、JSONで `type:"transcript"`/`type:"audio"` 類を最小整形
 - 機密/PIIはログに残しません。
+
+Docker 構成
+- ゲートウェイ用: `Dockerfile.ws-gateway`（Node 20、`node server/index.js` 起動、非 root）
+- UI 用: `Dockerfile.ui`（Nginx で `index.html` を配布）
+
+デプロイ（Cloud Run）
+- スクリプト: `scripts/deploy.sh`
+  - 例: ゲートウェイをデプロイ
+    - `PROJECT=<project> REGION=asia-northeast1 SERVICE=ws-gateway-clean \\\n+       SECRET_GOOGLE_API_KEY=google-api-key SECRET_WS_TOKEN=ws-token \\\n+       DOCKERFILE=Dockerfile.ws-gateway bash scripts/deploy.sh ws-gateway-clean`
+  - 主なオプション（環境変数）
+    - `DOCKERFILE` デフォルト `Dockerfile.ws-gateway`
+    - `ENV_FILE` デフォルト `env.yaml`（存在しなければ未使用）
+    - `SECRET_GOOGLE_API_KEY` → `GOOGLE_API_KEY` を Secret Manager から注入（例: `google-api-key[:latest]`）
+    - `SECRET_WS_TOKEN` → `WS_TOKEN` を Secret Manager から注入（例: `ws-token[:latest]`）
+    - `ALLOW_UNAUTH` デフォルト `true`（必要に応じて認証化）

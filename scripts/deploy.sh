@@ -40,9 +40,11 @@ if [[ -z "${PROJECT}" ]]; then
 fi
 
 IMAGE="gcr.io/${PROJECT}/${SERVICE}:${IMAGE_TAG}"
+DOCKERFILE=${DOCKERFILE:-Dockerfile.ws-gateway}
 
-echo "[Build] Building container image: ${IMAGE}"
-gcloud builds submit --tag "${IMAGE}"
+echo "[Build] Building container image: ${IMAGE} (dockerfile=${DOCKERFILE})"
+gcloud builds submit --tag "${IMAGE}" --gcs-log-dir="" --config /dev/null --verbosity=info --timeout=1200 --ignore-file=.dockerignore --dockerfile "${DOCKERFILE}" . 2>/dev/null || \
+  gcloud builds submit --tag "${IMAGE}" --file "${DOCKERFILE}"
 
 ENV_FLAG=()
 if [[ -f "${ENV_FILE}" ]]; then
@@ -74,8 +76,6 @@ gcloud run deploy "${SERVICE}" \
   --port 8080 \
   "${UNAUTH_FLAG[@]}" \
   --cpu "${CPU}" \
-SECRET_GOOGLE_API_KEY=${SECRET_GOOGLE_API_KEY:-}
-SECRET_WS_TOKEN=${SECRET_WS_TOKEN:-}
   --memory "${MEM}" \
   --concurrency "${CONCURRENCY}" \
   --max-instances "${MAX_INSTANCES}" \
